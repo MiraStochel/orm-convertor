@@ -75,7 +75,7 @@ internal sealed class CatalogCell : CatalogMeasured
     /// <summary>The features the target could not say in its own language, where it fell back.</summary>
     public string? FallbackFeatures { get; set; }
 
-    /// <summary>What the translation left out with a Loss record (decision 070): a projection outside the vocabulary, an ordering it does not carry. The artifact is poorer by it, and a read that misses a column says so.</summary>
+    /// <summary>What the query lost with a Loss record of the query branch (decisions 070 and 022): a projection outside the vocabulary, an ordering it does not carry. The artifact is poorer by it, and a read that misses a column says so.</summary>
     public string? Lost { get; set; }
 
     /// <summary>Why the artifact could not be compiled or its factory built, or null when it could.</summary>
@@ -450,7 +450,9 @@ internal sealed class CatalogRun
                     cell.FallbackFeatures = cell.FellBack
                         ? string.Join("; ", fallbacks.Select(record => $"{record.Feature?.ToString() ?? "-"}: {record.Reason}").Distinct())
                         : null;
-                    var losses = conversion.Records.Where(record => record.Kind == ConversionRecordKind.Loss).Select(record => record.Reason).Distinct().ToList();
+                    // The losses of the query branch alone (decision 022): what a mapping of the
+                    // target cannot state changes no column of a result.
+                    var losses = conversion.Records.Where(record => record.Kind == ConversionRecordKind.Loss && record.Feature is not null).Select(record => record.Reason).Distinct().ToList();
                     cell.Lost = losses.Count > 0 ? string.Join("; ", losses) : null;
 
                     started = Stopwatch.GetTimestamp();

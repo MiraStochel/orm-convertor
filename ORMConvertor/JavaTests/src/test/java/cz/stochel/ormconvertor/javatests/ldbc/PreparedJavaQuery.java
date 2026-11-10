@@ -6,11 +6,13 @@ import cz.stochel.ormconvertor.javatests.eclipselink.EclipseLinkBootstrap;
 import cz.stochel.ormconvertor.javatests.hibernate.HibernateBootstrap;
 import cz.stochel.ormconvertor.javatests.mybatis.MyBatisBootstrap;
 import cz.stochel.ormconvertor.javatests.tool.ContentType;
+import cz.stochel.ormconvertor.javatests.tool.ConversionRecord;
 import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
 import cz.stochel.ormconvertor.javatests.tool.ConversionUnit;
 import cz.stochel.ormconvertor.javatests.tool.JavaProject;
 import cz.stochel.ormconvertor.javatests.tool.JavaSources;
 import cz.stochel.ormconvertor.javatests.tool.Orm;
+import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.lang.reflect.InvocationTargetException;
@@ -56,14 +58,16 @@ public final class PreparedJavaQuery implements AutoCloseable {
     private final EntityManagerFactory jpa;
     private final SqlSessionFactory myBatis;
     private final Class<?> mapper;
+    private final boolean lossless;
 
-    private PreparedJavaQuery(int target, JavaProject project, Method method, EntityManagerFactory jpa, SqlSessionFactory myBatis, Class<?> mapper) {
+    private PreparedJavaQuery(int target, JavaProject project, Method method, EntityManagerFactory jpa, SqlSessionFactory myBatis, Class<?> mapper, boolean lossless) {
         this.target = target;
         this.project = project;
         this.method = method;
         this.jpa = jpa;
         this.myBatis = myBatis;
         this.mapper = mapper;
+        this.lossless = lossless;
     }
 
     /**
@@ -94,7 +98,7 @@ public final class PreparedJavaQuery implements AutoCloseable {
             SqlSessionFactory factory = MyBatisBootstrap.build(loader, mappers, jdbcUrl);
             Class<?> mapper = project.load(MyBatisBootstrap.namespaceOf(statementMapper));
 
-            return new PreparedJavaQuery(target, project, mapper.getDeclaredMethods()[0], null, factory, mapper);
+            return new PreparedJavaQuery(target, project, mapper.getDeclaredMethods()[0], null, factory, mapper, queryLosses(response).isEmpty());
         }
 
         String artifact = mutated != null ? mutated : response.artifactOf(ContentType.JAVA_QUERY).content();
@@ -107,7 +111,17 @@ public final class PreparedJavaQuery implements AutoCloseable {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(name + ": the generated class declares no method"));
 
-        return new PreparedJavaQuery(target, project, method, domain.factory(target), null, null);
+        return new PreparedJavaQuery(target, project, method, domain.factory(target), null, null, queryLosses(response).isEmpty());
+    }
+
+    /**
+     * The Loss records of the query branch (decision 022: they name a query feature, the
+     * records of the entity branch do not) - what the query lost, as against what a mapping
+     * of the target cannot state, which nearly every MyBatis answer records and which changes
+     * no column of a result.
+     */
+    public static List<ConversionRecord> queryLosses(ConversionResponse response) {
+        return response.recordsOf(RecordKind.LOSS).stream().filter(record -> record.feature() != null).toList();
     }
 
     /** The names of the query's parameters, after the framework's handle where there is one (decision 083). */
@@ -138,14 +152,18 @@ public final class PreparedJavaQuery implements AutoCloseable {
     /**
      * Runs the query with the arguments in the order of its parameters. JPQL and native JPA
      * queries hand a projection back as an object array per row, MyBatis as a map keyed by the
-     * projected columns (decision 104).
+     * projected columns (decision 104). Only where the query lost nothing ({@link #queryLosses}) does the
+     * artifact project every column the caller names, so only then is a column missing from
+     * every map of a MyBatis result a NULL ({@link #withEveryColumn}); after a loss it may be
+     * a column the artifact does not project, and the read fails on it, as the .NET run's read
+     * of an untyped row does.
      */
     public List<List<Object>> run(String id, Object[] arguments, List<String> fields) throws Exception {
         try {
             if (target == Orm.MYBATIS) {
                 try (SqlSession session = myBatis.openSession()) {
-                    Object returned = method.invoke(session.getMapper(mapper), values(arguments, 0));
-                    return JavaQueryRunner.rows(withEveryColumn((List<?>) returned, fields), id, fields, false);
+                    List<?> returned = (List<?>) method.invoke(session.getMapper(mapper), values(arguments, 0));
+                    return JavaQueryRunner.rows(lossless ? withEveryColumn(returned, fields) : returned, id, fields, false);
                 }
             }
 
@@ -239,7 +257,8 @@ public final class PreparedJavaQuery implements AutoCloseable {
      * by default, MyBatisBootstrap), and a column NULL in every row of a result - the
      * companies of persons who work nowhere - is then in no map at all. The binding names only
      * columns the text projects, which the catalog's own test holds, so such a column is NULL
-     * here rather than missing.
+     * here rather than missing - as long as the translation lost nothing, which the records
+     * of the answer say and this method does not know ({@link #run}).
      */
     public static List<?> withEveryColumn(List<?> rows, List<String> fields) {
         List<Object> completed = new ArrayList<>(rows.size());

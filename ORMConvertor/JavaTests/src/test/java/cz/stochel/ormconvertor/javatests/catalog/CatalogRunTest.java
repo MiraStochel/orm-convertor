@@ -3,10 +3,21 @@ package cz.stochel.ormconvertor.javatests.catalog;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cz.stochel.ormconvertor.javatests.differential.JavaQueryRunner;
+import cz.stochel.ormconvertor.javatests.ldbc.PreparedJavaQuery;
+import cz.stochel.ormconvertor.javatests.tool.ConversionRecord;
+import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
+import cz.stochel.ormconvertor.javatests.tool.Orm;
+import cz.stochel.ormconvertor.javatests.tool.QueryFeature;
+import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -95,6 +106,33 @@ class CatalogRunTest {
     void theDigestIsTheOneTheDotNetSuiteWrites() {
         assertEquals("rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", CatalogRun.digest(List.of()));
         assertEquals("rows=2 sha256=" + sha256("1\t\"a\"\n2\tNULL"), CatalogRun.digest(List.of("1\t\"a\"", "2\tNULL")));
+    }
+
+    /**
+     * A cell states what its translation lost, as the .NET run's cell does, and after a loss
+     * a column no map of a MyBatis result carries is a column the artifact does not project,
+     * not a NULL: the read fails on it instead of returning rows that only differ from the
+     * source's (the SEDE run of 2026-11-08, s31062).
+     */
+    @Test
+    void aColumnTheTranslationLostIsMissingRatherThanNull() {
+        ConversionRecord loss = new ConversionRecord(RecordKind.LOSS, Orm.MYBATIS, null, null, null, null, QueryFeature.EXPRESSION, null, "The projected expression '-bountyamount' was dropped.");
+        // A loss of the entity branch names no query feature and changes no column of a result.
+        ConversionRecord mapping = new ConversionRecord(RecordKind.LOSS, Orm.MYBATIS, null, "Votes", "Id", 1, null, null, "The source states PrimaryKeyStrategy and the target has no way to record it.");
+        ConversionRecord fallback = new ConversionRecord(RecordKind.FALLBACK, Orm.MYBATIS, null, null, null, null, null, null, "native SQL");
+        ConversionResponse lossy = new ConversionResponse("r", "v", Orm.DAPPER, "", Orm.MYBATIS, "", List.of(), List.of(mapping, loss, fallback, loss), 0, null);
+        ConversionResponse whole = new ConversionResponse("r", "v", Orm.DAPPER, "", Orm.MYBATIS, "", List.of(), List.of(mapping, fallback), 0, null);
+
+        assertEquals("The projected expression '-bountyamount' was dropped.", CatalogRun.lost(lossy));
+        assertNull(CatalogRun.lost(whole));
+        assertEquals("boom (the translation lost: it)", CatalogRun.withLoss("boom", "it"));
+        assertEquals("boom", CatalogRun.withLoss("boom", null));
+
+        List<String> fields = List.of("owneruserid", "bountyamount");
+        List<Map<String, Object>> returned = List.of(new LinkedHashMap<>(Map.of("owneruserid", 1)));
+        assertEquals(Arrays.asList(1, null), JavaQueryRunner.rows(PreparedJavaQuery.withEveryColumn(returned, fields), "s31062", fields, false).get(0));
+        IllegalStateException missing = assertThrows(IllegalStateException.class, () -> JavaQueryRunner.rows(returned, "s31062", fields, false));
+        assertTrue(missing.getMessage().contains("\"bountyamount\""), missing.getMessage());
     }
 
     private static String sha256(String text) {

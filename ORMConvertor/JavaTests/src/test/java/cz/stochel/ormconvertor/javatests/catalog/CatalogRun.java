@@ -433,6 +433,7 @@ public final class CatalogRun {
                     continue;
                 }
                 cell.fellBack = !response.recordsOf(RecordKind.FALLBACK).isEmpty();
+                cell.lost = lost(response);
 
                 started = System.nanoTime();
                 try {
@@ -453,7 +454,7 @@ public final class CatalogRun {
                     canonical = canonical(query, rows);
                 } catch (Throwable e) {
                     cell.selectNanos = System.nanoTime() - started;
-                    cell.failed = innermost(e).toString();
+                    cell.failed = withLoss(innermost(e).toString(), cell.lost);
                     continue;
                 }
 
@@ -488,6 +489,17 @@ public final class CatalogRun {
                 results.writeCells(query);
             }
         }
+    }
+
+    /** What the query lost with a Loss record of the query branch (decisions 070 and 022), as the .NET run's cell states it; null where it lost nothing. */
+    static String lost(ConversionResponse response) {
+        List<String> reasons = PreparedJavaQuery.queryLosses(response).stream().map(record -> record.reason()).distinct().toList();
+        return reasons.isEmpty() ? null : String.join("; ", reasons);
+    }
+
+    /** The reason a read failed, with what the translation lost after it - the column a read misses is usually one of them. */
+    static String withLoss(String failure, String lost) {
+        return lost == null ? failure : failure + " (the translation lost: " + lost + ")";
     }
 
     /**
@@ -905,6 +917,8 @@ public final class CatalogRun {
         public final int framework;
         public String refused;
         public boolean fellBack;
+        /** What the query lost with a Loss record of the query branch (decisions 070 and 022); null where it lost nothing. A read that misses a column says it after its own reason. */
+        public String lost;
         public String unprepared;
         public String failed;
         /** How many rows the artifact returned; null where it did not run. */
