@@ -14,6 +14,14 @@ RUN --mount=type=cache,target=/var/lib/apt \
     curl -L -o /var/opt/mssql/backup/WideWorldImporters-Full.bak \
     https://github.com/Microsoft/sql-server-samples/releases/download/wide-world-importers-v1.0/WideWorldImporters-Full.bak
 
+# Where the data sets come from (decision 215): the project's own copies, attached to the
+# release data_sets of the repository, are asked first, the publisher's address after them.
+# fetch-dataset.sh tries the addresses in order and checks the file against
+# database/datasets.sha256 when its name is listed there.
+ARG DATASETS_URL=https://github.com/MiraStochel/orm-convertor/releases/download/data_sets
+COPY database/fetch-dataset.sh database/datasets.sha256 /opt/datasets/
+RUN sed -i 's/\r$//' /opt/datasets/fetch-dataset.sh && chmod +x /opt/datasets/fetch-dataset.sh
+
 # The LDBC SNB Interactive v1 data set of the second database, LdbcSnb (decision 110). The
 # archive is fetched while the image is built, so the container starts without the network,
 # and it stays packed: load-ldbc.sh unpacks it once, on the first start, into a temporary
@@ -23,30 +31,39 @@ RUN --mount=type=cache,target=/var/lib/apt \
 ARG LDBC_SCALE_FACTOR=1
 RUN mkdir -p /opt/ldbc && \
     if [ "${LDBC_SCALE_FACTOR}" != "none" ]; then \
-        curl -fL -o "/opt/ldbc/social_network-sf${LDBC_SCALE_FACTOR}-CsvMergeForeign-StringDateFormatter.tar.zst" \
-        "https://datasets.ldbcouncil.org/snb-interactive-v1/social_network-sf${LDBC_SCALE_FACTOR}-CsvMergeForeign-StringDateFormatter.tar.zst"; \
+        archive="social_network-sf${LDBC_SCALE_FACTOR}-CsvMergeForeign-StringDateFormatter.tar.zst" && \
+        /opt/datasets/fetch-dataset.sh "/opt/ldbc/${archive}" \
+            "${DATASETS_URL}/${archive}" \
+            "https://datasets.ldbcouncil.org/snb-interactive-v1/${archive}" || \
+        { echo "No LDBC data set of scale factor ${LDBC_SCALE_FACTOR}; LDBC_SCALE_FACTOR=none builds the image without LdbcSnb." >&2; exit 1; }; \
     fi
 
 # The validation set of the same scale factor (decision 117), the judge of the LDBC query
-# catalog. LDBC publishes it for 0.1 to 10 in one archive of 205 MB; the image keeps the file
-# of its own scale factor, packed again, and drops the rest in the same step, so the archive
-# never stands in a layer. A scale factor outside that range gets the data and no judge.
+# catalog. Our own copy is the one file of the scale factor, packed. LDBC publishes the set
+# for 0.1 to 10 in one archive of 205 MB; when the copy is missing, the image keeps the file
+# of its own scale factor out of it, packed again, and drops the rest in the same step, so
+# the archive never stands in a layer. A scale factor outside that range gets the data and
+# no judge.
 RUN case "${LDBC_SCALE_FACTOR}" in \
         0.1|0.3|1|3|10) \
-            curl -fL "https://datasets.ldbcouncil.org/interactive-v1/validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst" \
-                | zstd -dc | tar -x -C /opt/ldbc "validation_params-sf${LDBC_SCALE_FACTOR}.csv" && \
-            zstd -q --rm "/opt/ldbc/validation_params-sf${LDBC_SCALE_FACTOR}.csv" ;; \
+            file="validation_params-sf${LDBC_SCALE_FACTOR}.csv" && \
+            { /opt/datasets/fetch-dataset.sh "/opt/ldbc/${file}.zst" "${DATASETS_URL}/${file}.zst" || \
+              { [ $? -eq 1 ] && \
+                curl -fL "https://datasets.ldbcouncil.org/interactive-v1/validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst" \
+                    | zstd -dc | tar -x -C /opt/ldbc "${file}" && \
+                zstd -q --rm "/opt/ldbc/${file}"; }; } ;; \
     esac
 
 # The FIBEN benchmark of the third database, Fiben (decision 149): data.zip of IBM/fiben-benchmark
 # (Apache-2.0, 80 MB) at the commit the catalog was imported from, fetched while the image is
-# built and unpacked by load-fiben.sh once, on the first start. Another commit of the repository
-# selects its archive; none leaves the benchmark out.
+# built and unpacked by load-fiben.sh once, on the first start. The repository is gone from
+# GitHub, so the archive exists only as our copy; none leaves the benchmark out.
 ARG FIBEN_DATASET=96eaffc60cc824b8f545cd29adffc2a170e08d04
 RUN mkdir -p /opt/fiben && \
     if [ "${FIBEN_DATASET}" != "none" ]; then \
-        curl -fL -o "/opt/fiben/fiben-benchmark-$(echo "${FIBEN_DATASET}" | cut -c1-7).zip" \
-        "https://github.com/IBM/fiben-benchmark/raw/${FIBEN_DATASET}/data.zip"; \
+        dataset="fiben-benchmark-$(echo "${FIBEN_DATASET}" | cut -c1-7)" && \
+        /opt/datasets/fetch-dataset.sh "/opt/fiben/${dataset}.zip" "${DATASETS_URL}/${dataset}-data.zip" || \
+        { echo "No FIBEN data set of commit ${FIBEN_DATASET}; FIBEN_DATASET=none builds the image without Fiben." >&2; exit 1; }; \
     fi
 
 # The data of the SEDE query set, the fourth database Sede (decision 208): the data dump of one

@@ -1,7 +1,7 @@
 # 213 — Výuková stránka je samostatný dokument `tutorial.html`, který provede jedním živým převodem v krocích překladové obrazovky a předá ho překladači odkazem, jenž příklad jen předvybere
 
 Datum: 2026-11-10
-Stav: platí
+Stav: nahrazeno 214
 Požadavky: S7, F14
 Podklad: rozhodnutí [032](032-frontend-as-static-pages-without-a-build.md), [033](033-shape-of-the-static-frontend-screens.md), [056](056-work-in-progress-input-stays-in-the-browser.md), [099](099-examples-are-content-not-a-choice.md), [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) a [137](137-text-runs-the-full-width-and-controls-keep-a-fixed-width.md); scénáře UC1 a UC6 v [`use-cases.md`](../use-cases.md); [`architecture.md`](../architecture.md) §6.3
 

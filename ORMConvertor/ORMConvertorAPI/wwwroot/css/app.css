@@ -15,6 +15,12 @@
   --app-control-width-long: 40rem;
 }
 
+/* Pico grows the root font with the window, up to 21 px; the pages are prose beside code and
+   read better smaller. Everything is sized in rem or em, so the one cap scales all of it. */
+:root {
+  font-size: min(var(--pico-font-size), 17px);
+}
+
 /* ---- shared chrome ---------------------------------------------------- */
 
 body > header nav strong a {
@@ -861,56 +867,86 @@ table.sede-matrix th[scope="row"] small {
   max-width: 28rem;
 }
 
-/* ---- the tutorial (decision 213) ----------------------------------------- */
+/* ---- the tutorial -------------------------------------------------------- */
 
-/* The step bar: a row of numbered anchors that stays at the top of the window while the
-   steps scroll under it, and marks the step being read (aria-current, set from the scroll
-   position by tutorial.js). Pico styles a nav as a flex row already; this adds the stickiness
-   and an opaque background, so that the code panels do not show through it. */
+/* The step bar is the wizard's navigation: six equal fields across the content, each a large
+   number over the step's name, the shown step filled (aria-current, set by tutorial.js from
+   the address). It stays at the top of the window while a long step scrolls under it, with an
+   opaque background so that the code panels do not show through. */
 nav.tutorial-steps {
   position: sticky;
   top: 0;
   z-index: 2;
-  margin: 0 0 1.5rem;
-  padding: 0.4rem 0;
+  display: block;
+  margin: 0 0 2rem;
+  padding: 0.6rem 0;
   background: var(--pico-background-color);
   border-bottom: var(--app-panel-border);
 }
 
 nav.tutorial-steps ol {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 nav.tutorial-steps li {
+  display: block;
+  margin: 0;
   padding: 0;
 }
 
 nav.tutorial-steps a {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  height: 100%;
   margin: 0;
-  padding: 0.2rem 0.4rem;
+  padding: 0.6rem 0.25rem;
+  border: 1px solid var(--pico-muted-border-color);
   border-radius: var(--pico-border-radius);
   color: var(--pico-muted-color);
+  text-align: center;
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+nav.tutorial-steps a .step-number {
+  font-size: 1.25rem;
+}
+
+nav.tutorial-steps a:hover {
+  border-color: var(--pico-primary-background);
+  color: var(--pico-color);
 }
 
 nav.tutorial-steps a[aria-current="step"] {
-  color: var(--pico-color);
+  border-color: var(--pico-primary-background);
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
   font-weight: 600;
 }
 
 nav.tutorial-steps a[aria-current="step"] .step-number {
-  background: var(--pico-primary-background);
-  border-color: var(--pico-primary-background);
-  color: var(--pico-primary-inverse);
+  background: var(--pico-primary-inverse);
+  border-color: var(--pico-primary-inverse);
+  color: var(--pico-primary-background);
+}
+
+@media (max-width: 40rem) {
+  nav.tutorial-steps ol {
+    gap: 0.25rem;
+  }
+
+  nav.tutorial-steps a {
+    padding: 0.4rem 0.1rem;
+    font-size: 0.75rem;
+  }
 }
 
 /* The number of a step, in the bar and before each step's heading alike: the same mark in
@@ -941,15 +977,54 @@ nav.tutorial-steps a[aria-current="step"] .step-number {
   color: var(--pico-primary-inverse);
 }
 
-/* A jump to a step lands below the sticky bar, not under it. */
-.tutorial-step {
-  scroll-margin-top: 4rem;
-  padding-bottom: 1rem;
-  border-bottom: var(--app-panel-border);
+/* One step is on the page at a time; a move to it lands below the sticky bar, not under it,
+   and so does a jump to one of its panels. */
+.tutorial-step,
+.tutorial-step .artifact {
+  scroll-margin-top: 7.5rem;
 }
 
-.tutorial-step:last-of-type {
-  border-bottom: none;
+/* The heading takes the focus when the step changes, for a screen reader to announce it. */
+.tutorial-step > h2:focus {
+  outline: none;
+}
+
+/* Under the step: the step before on the left, the step after on the right. */
+.tutorial-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: var(--app-panel-border);
+}
+
+.tutorial-pager a[role="button"] {
+  width: auto;
+}
+
+.tutorial-pager .pager-next {
+  margin-left: auto;
+}
+
+/* The way back is the quieter of the two: an outline, where the way on is filled. */
+.tutorial-pager a[role="button"]:not(.pager-next) {
+  background: transparent;
+  border-color: var(--pico-muted-border-color);
+  color: var(--pico-color);
+}
+
+/* Paper has no steps to move between: everything is printed, one step under the other. */
+@media print {
+  .tutorial-step[hidden],
+  #tutorial-lede[hidden] {
+    display: block !important;
+  }
+
+  nav.tutorial-steps,
+  .tutorial-pager {
+    display: none;
+  }
 }
 
 /* Do / See: two labelled lines, the action first. The labels size to their content and the

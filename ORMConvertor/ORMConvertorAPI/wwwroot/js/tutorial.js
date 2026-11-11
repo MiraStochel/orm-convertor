@@ -1,10 +1,12 @@
 /*
- * The tutorial (decision 213): one live conversion walked through the five steps of the
+ * The tutorial: one live conversion walked through the five steps of the
  * translation screen. The page names its example by the key the server gives it, shows the
  * example's real units, converts them when the reader presses Convert, and renders the result
  * with the translation screen's own functions - so everything the steps point at is the
  * server's statement, and only the prose and the labels of the screen's controls are the
  * page's.
+ *
+ * One step is shown at a time and the address says which.
  *
  * It neither reads nor writes the translation screen's stored input (decision 056): what the
  * reader has in the translator stays there whatever happens here.
@@ -108,9 +110,10 @@ function renderSummary(response) {
     button.className = "badge-button";
     button.title = "Show the records";
     button.append(kindBadge(kind, `x ${count}`));
-    button.addEventListener("click", () =>
-      document.getElementById("tutorial-records").scrollIntoView({ behavior: "smooth", block: "center" }),
-    );
+    button.addEventListener("click", () => {
+      goToStep("step-result");
+      document.getElementById("tutorial-records").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
     strip.append(button);
   }
 
@@ -118,9 +121,7 @@ function renderSummary(response) {
   jump.type = "button";
   jump.className = "link-button";
   jump.textContent = "go to the result";
-  jump.addEventListener("click", () =>
-    document.getElementById("step-result").scrollIntoView({ behavior: "smooth", block: "start" }),
-  );
+  jump.addEventListener("click", () => goToStep("step-result"));
   strip.append(jump);
 }
 
@@ -246,51 +247,119 @@ function renderResult(response) {
   renderRecords(document.getElementById("tutorial-records"), response.records, { artifactIndex });
 }
 
-/* ---- the step bar: which step the reader is at --------------------------- */
+/* ---- the wizard: one step shown, the step kept in the address ------------ */
 
 /*
- * The current step is read off the scroll position, not kept as state: the step whose
- * heading last passed the top third of the window is the one being read.
+ * The page shows one step and hides the rest. Which one is the fragment of
+ * the address - the step bar and the links under each step are plain anchors to the steps'
+ * ids - so the browser keeps the only state there is: a step can be linked to, the history
+ * walks the steps and a reload stays where the reader was.
  */
-function followSteps() {
-  const links = new Map(
-    [...document.querySelectorAll(".tutorial-steps a")].map((link) => [link.hash.slice(1), link]),
-  );
-  const sections = [...document.querySelectorAll(".tutorial-step")];
+const steps = [...document.querySelectorAll(".tutorial-step")];
+const stepBar = document.querySelector(".tutorial-steps");
+const stepLinks = new Map(
+  [...stepBar.querySelectorAll("a")].map((link) => [link.hash.slice(1), link]),
+);
+let currentStep = null;
 
-  const update = () => {
-    const line = window.innerHeight / 3;
-    let current = sections[0];
-    for (const section of sections) {
-      if (section.getBoundingClientRect().top <= line) current = section;
-    }
-    for (const [id, link] of links) {
-      if (id === current.id) link.setAttribute("aria-current", "step");
-      else link.removeAttribute("aria-current");
-    }
-  };
+/* The step the address names; the first one when it names none, or one the page lacks. */
+function stepFromAddress() {
+  const id = location.hash.slice(1);
+  return steps.find((step) => step.id === id) ?? steps[0];
+}
 
-  let pending = false;
-  window.addEventListener(
-    "scroll",
-    () => {
-      if (pending) return;
-      pending = true;
-      requestAnimationFrame(() => {
-        pending = false;
-        update();
-      });
-    },
-    { passive: true },
-  );
-  window.addEventListener("resize", update);
-  update();
+/*
+ * With `move`, the view and the focus follow the step: a reader who has scrolled down a long
+ * step lands at the start of the new one, and a screen reader announces its heading. A bar
+ * that is not stuck to the top has the step right under it already, so nothing scrolls.
+ */
+function showStep(step, { move }) {
+  if (step === currentStep) return;
+  currentStep = step;
+
+  for (const section of steps) section.hidden = section !== step;
+  for (const [id, link] of stepLinks) {
+    if (id === step.id) link.setAttribute("aria-current", "step");
+    else link.removeAttribute("aria-current");
+  }
+  // The lede introduces the page, so it belongs to the first step only.
+  document.getElementById("tutorial-lede").hidden = step !== steps[0];
+
+  if (!move) return;
+  if (step === steps[0]) window.scrollTo({ top: 0 });
+  else if (stepBar.getBoundingClientRect().top <= 0) step.scrollIntoView({ block: "start" });
+  step.querySelector("h2").focus({ preventScroll: true });
+}
+
+/* A move the page makes itself (the summary strip); the address follows it. */
+function goToStep(id) {
+  const step = steps.find((candidate) => candidate.id === id);
+  if (!step) return;
+  showStep(step, { move: true });
+  if (location.hash !== `#${id}`) location.hash = id;
+}
+
+/* Under each step, a link to the step before and to the step after, named as the bar names them. */
+function addPagers() {
+  const label = (step) => stepLinks.get(step.id).textContent.replace(/\s+/g, " ").trim();
+
+  steps.forEach((step, index) => {
+    step.querySelector("h2").tabIndex = -1;
+
+    const pager = document.createElement("div");
+    pager.className = "tutorial-pager";
+
+    const previous = steps[index - 1];
+    if (previous) {
+      const link = document.createElement("a");
+      link.href = `#${previous.id}`;
+      link.setAttribute("role", "button");
+      link.className = "pager-previous";
+      link.textContent = `← ${label(previous)}`;
+      pager.append(link);
+    }
+
+    const next = steps[index + 1];
+    if (next) {
+      const link = document.createElement("a");
+      link.href = `#${next.id}`;
+      link.setAttribute("role", "button");
+      link.className = "pager-next";
+      link.textContent = `${label(next)} →`;
+      pager.append(link);
+    }
+
+    step.append(pager);
+  });
+}
+
+/*
+ * The left and right arrows walk the steps like the links under a step. A key with a modifier
+ * is the browser's (Alt+Left is its Back), and an arrow pressed in a field, a list or a code
+ * panel moves the caret, the choice or the panel's own scroll.
+ */
+function onArrowKey(event) {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.target.closest?.("input, textarea, select, pre, [contenteditable]")) return;
+
+  const index = steps.indexOf(currentStep) + (event.key === "ArrowRight" ? 1 : -1);
+  if (index < 0 || index >= steps.length) return;
+  event.preventDefault();
+  goToStep(steps[index].id);
+}
+
+function startWizard() {
+  addPagers();
+  showStep(stepFromAddress(), { move: location.hash.length > 1 });
+  window.addEventListener("hashchange", () => showStep(stepFromAddress(), { move: true }));
+  document.addEventListener("keydown", onArrowKey);
 }
 
 /* ---- init ---------------------------------------------------------------- */
 
 async function init() {
-  followSteps();
+  startWizard();
   document.getElementById("tutorial-convert").addEventListener("click", onConvert);
 
   let examples;
