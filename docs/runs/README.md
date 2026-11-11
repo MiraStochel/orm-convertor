@@ -88,7 +88,7 @@ Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 
 ## Velikost sady a pokrytí
 
-Jediné místo, kde se velikost sady zapisuje (rozh. 095); každý řádek jmenuje commit. Ve všech bězích 0 selhaných. Přeskočený test patří do jedné ze skupin, každá se svým důvodem: diferenční buňky tvaru LINQ v NHibernatu, který jeho provider nevysloví (záznam `Omitted`, rozh. [118](../decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md); v každém prostředí), soudce LDBC bez `LdbcSnb` a hloubky jeho dotazů na cesty nad jiným data setem než SF 1, a běh FIBEN bez `Fiben`; k nim experimentální běh a běh cizích artefaktů bez svého adresáře (po jednom případu v každé sadě) a obě fáze webového kanálu bez `ORMCONVERTOR_LLM_RUN` (.NET sada). *Zafixované* = dvojice `build` + `run`; *host* = `dotnet test` na MIS3 jen s LocalDB; integrační testy počítá `-Dgroups=integration`.
+Jediné místo, kde se velikost sady zapisuje (rozh. 095); každý řádek jmenuje commit. Ve všech bězích 0 selhaných. Přeskočený test patří do jedné ze skupin, každá se svým důvodem: diferenční buňky tvaru LINQ v NHibernatu, který jeho provider nevysloví (záznam `Omitted`, rozh. [118](../decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md); v každém prostředí), soudce LDBC bez `LdbcSnb` a hloubky jeho dotazů na cesty nad jiným data setem než SF 1, běh FIBEN bez `Fiben` a běh SEDE bez `Sede`; k nim experimentální běh a běh cizích artefaktů bez svého adresáře (po jednom případu v každé sadě) a obě fáze webového kanálu bez `ORMCONVERTOR_LLM_RUN` (.NET sada). *Zafixované* = dvojice `build` + `run`; *host* = `dotnet test` na MIS3 jen s LocalDB; integrační testy počítá `-Dgroups=integration`.
 
 | Datum | Strom | .NET | Java (integrační) | Poznámka |
 |---|---|---|---|---|
@@ -100,6 +100,7 @@ Jediné místo, kde se velikost sady zapisuje (rozh. 095); každý řádek jmenu
 | 2026-10-22 | `ee29333` | 12889, zafixované (1720 přeskočeno) | 4660 (nepřepočteno), zafixované (1660 přeskočeno) | první krok úplného běhu před [během FIBEN](2026-10-22-fiben-2.md); soudce nad 1000 řádky SF 0,1 v obou |
 | 2026-10-24 | `5caefc5` | nespuštěno (v kontejneru jen krok experimentálního běhu) | 4693 (nepřepočteno), zafixované (1662 přeskočeno: běh FIBEN, experimentální běh a běh cizích artefaktů bez nastavení) | kontrola změn od 2026-10-22 před [experimentálním během](2026-10-24-experiment.md); soudce nad 1000 řádky SF 0,1 |
 | 2026-11-02 | `63d0b81` (značka `2.3.0` na `d0c8763`, který se od něj liší jen dokumentací a číslem verze) | 13947, zafixované (1736 přeskočeno) | 4910 (nepřepočteno), zafixované (1662 přeskočeno) | **vydání `2.3.0`**; první krok úplného běhu před [během FIBEN](2026-11-02-fiben.md) a [soudcem LDBC](2026-11-02-ldbc-judge.md); soudce nad 1000 řádky SF 0,1 v obou |
+| 2026-11-10 | `d05d76d` s necommitnutými změnami, které nese commit značky `2.4.0`: číslo verze, rozsahy verzí vlastních projektů v zámcích, dokumentace | 26075, zafixované (13737 přeskočeno) | 16937 (nepřepočteno), zafixované (13661 přeskočeno) | **vydání `2.4.0`**; přírůstek proti `2.3.0` jsou převážně případy běhu SEDE, které bez `Sede` přeskakují; soudce nad 1000 řádky SF 0,1 v obou |
 
 **Počet patří stromu**, ne stroji. Jiný součet znamená jiný strom, obvykle zastaralý obraz; prostředí posune jen rozdělení na prošlé a přeskočené, a přeskočené testy o F4 a F6 nic nedokazují.
 

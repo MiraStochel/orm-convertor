@@ -19,7 +19,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "model": {

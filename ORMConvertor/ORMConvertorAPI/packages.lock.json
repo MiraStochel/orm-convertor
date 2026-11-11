@@ -184,8 +184,8 @@
       "abstractwrappers": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.2.0, )",
-          "Model": "[2.2.0, )"
+          "Common": "[2.4.0, )",
+          "Model": "[2.4.0, )"
         }
       },
       "advisor": {
@@ -194,13 +194,13 @@
       "advisorbenchmarking": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.2.0, )",
+          "Common": "[2.4.0, )",
           "Dapper": "[2.1.79, )",
-          "DatabaseCatalog": "[2.2.0, )",
+          "DatabaseCatalog": "[2.4.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.10, )",
-          "Model": "[2.2.0, )",
+          "Model": "[2.4.0, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
@@ -208,97 +208,97 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "csharpentityparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "dapperwrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "CSharpEntityParsing": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
+          "CSharpEntityParsing": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )",
-          "TransactSql": "[2.2.0, )"
+          "Model": "[2.4.0, )",
+          "TransactSql": "[2.4.0, )"
         }
       },
       "databasecatalog": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
-          "Model": "[2.2.0, )",
+          "Model": "[2.4.0, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "eclipselinkwrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "JakartaPersistence": "[2.2.0, )",
-          "JavaEntityParsing": "[2.2.0, )",
-          "Model": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "JakartaPersistence": "[2.4.0, )",
+          "JavaEntityParsing": "[2.4.0, )",
+          "Model": "[2.4.0, )"
         }
       },
       "efcorewrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "CSharpEntityParsing": "[2.2.0, )",
-          "LinqBuilding": "[2.2.0, )",
-          "LinqParsing": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
+          "CSharpEntityParsing": "[2.4.0, )",
+          "LinqBuilding": "[2.4.0, )",
+          "LinqParsing": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )",
-          "TransactSql": "[2.2.0, )"
+          "Model": "[2.4.0, )",
+          "TransactSql": "[2.4.0, )"
         }
       },
       "hibernatewrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "JakartaPersistence": "[2.2.0, )",
-          "JavaEntityParsing": "[2.2.0, )",
-          "Model": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "JakartaPersistence": "[2.4.0, )",
+          "JavaEntityParsing": "[2.4.0, )",
+          "Model": "[2.4.0, )"
         }
       },
       "jakartapersistence": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "Common": "[2.2.0, )",
-          "JavaEntityParsing": "[2.2.0, )",
-          "Model": "[2.2.0, )",
-          "TransactSql": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "Common": "[2.4.0, )",
+          "JavaEntityParsing": "[2.4.0, )",
+          "Model": "[2.4.0, )",
+          "TransactSql": "[2.4.0, )"
         }
       },
       "javaentityparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "Model": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "Model": "[2.4.0, )"
         }
       },
       "linqbuilding": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "linqparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "model": {
@@ -307,51 +307,51 @@
       "mybatiswrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "JavaEntityParsing": "[2.2.0, )",
-          "Model": "[2.2.0, )",
-          "TransactSql": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "JavaEntityParsing": "[2.4.0, )",
+          "Model": "[2.4.0, )",
+          "TransactSql": "[2.4.0, )"
         }
       },
       "nhibernatewrappers": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "CSharpEntityParsing": "[2.2.0, )",
-          "LinqBuilding": "[2.2.0, )",
-          "LinqParsing": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
+          "CSharpEntityParsing": "[2.4.0, )",
+          "LinqBuilding": "[2.4.0, )",
+          "LinqParsing": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "TransactSql": "[2.2.0, )"
+          "TransactSql": "[2.4.0, )"
         }
       },
       "ormconvertor": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "DapperWrappers": "[2.2.0, )",
-          "DatabaseCatalog": "[2.2.0, )",
-          "EFCoreWrappers": "[2.2.0, )",
-          "EclipseLinkWrappers": "[2.2.0, )",
-          "HibernateWrappers": "[2.2.0, )",
-          "JakartaPersistence": "[2.2.0, )",
-          "Model": "[2.2.0, )",
-          "MyBatisWrappers": "[2.2.0, )",
-          "NHibernateWrappers": "[2.2.0, )"
+          "AbstractWrappers": "[2.4.0, )",
+          "DapperWrappers": "[2.4.0, )",
+          "DatabaseCatalog": "[2.4.0, )",
+          "EFCoreWrappers": "[2.4.0, )",
+          "EclipseLinkWrappers": "[2.4.0, )",
+          "HibernateWrappers": "[2.4.0, )",
+          "JakartaPersistence": "[2.4.0, )",
+          "Model": "[2.4.0, )",
+          "MyBatisWrappers": "[2.4.0, )",
+          "NHibernateWrappers": "[2.4.0, )"
         }
       },
       "sampledata": {
         "type": "Project",
         "dependencies": {
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "transactsql": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "Common": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
+          "Common": "[2.4.0, )",
           "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.78.1, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "Dapper": {

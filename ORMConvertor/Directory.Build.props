@@ -9,7 +9,7 @@
          so this number is what ConversionResult.ToolVersion reports. An inherited
          `Version` environment variable would override it, which is why ecosystem.config.js
          blanks that variable before `dotnet run`. -->
-    <Version>2.3.0</Version>
+    <Version>2.4.0</Version>
     <!-- Every project keeps a packages.lock.json beside its .csproj (decision 186): the
          direct versions are pinned in Directory.Packages.props, the lock file pins the
          transitive graph they resolve to. A plain `dotnet restore` rewrites the lock

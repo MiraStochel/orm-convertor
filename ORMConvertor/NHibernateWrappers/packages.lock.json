@@ -28,39 +28,39 @@
       "abstractwrappers": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.2.0, )",
-          "Model": "[2.2.0, )"
+          "Common": "[2.4.0, )",
+          "Model": "[2.4.0, )"
         }
       },
       "common": {
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "csharpentityparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "linqbuilding": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "linqparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "model": {
@@ -69,10 +69,10 @@
       "transactsql": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.2.0, )",
-          "Common": "[2.2.0, )",
+          "AbstractWrappers": "[2.4.0, )",
+          "Common": "[2.4.0, )",
           "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.78.1, )",
-          "Model": "[2.2.0, )"
+          "Model": "[2.4.0, )"
         }
       },
       "Microsoft.SqlServer.TransactSql.ScriptDom": {
