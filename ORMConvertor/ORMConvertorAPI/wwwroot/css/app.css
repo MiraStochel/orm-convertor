@@ -51,17 +51,6 @@ main h1 + p.lede {
   color: var(--pico-muted-color);
 }
 
-/* Every page takes the whole window (decision 216): Pico caps the content at 1450 px, so
-   zooming out would only widen the margins, and a page under the cap would stand narrower
-   than the one beside it in the nav. The text runs as wide as the panels under it. */
-body > header,
-body > main,
-body > footer {
-  max-width: none;
-  padding-right: var(--pico-block-spacing-horizontal);
-  padding-left: var(--pico-block-spacing-horizontal);
-}
-
 /*
  * A select or a field keeps a fixed width at the left of its row (decision 137). Pico
  * stretches every control over its container, which on a wide page puts a framework name at
