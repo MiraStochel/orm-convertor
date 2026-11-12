@@ -1,7 +1,7 @@
 # 137 — Text běží přes celou šířku stránky, výběry a pole mají pevnou šířku vlevo, šipka složeného oddílu stojí u popisku a výkladová stránka zabírá celé okno
 
 Datum: 2026-10-13
-Stav: platí
+Stav: platí; výběr stránek, které zabírají celé okno, nahrazuje [216](216-every-page-takes-the-whole-window.md)
 Požadavky: F14, S7
 Podklad: rozhodnutí [135](135-an-example-is-the-optional-first-step-and-the-sample-set-is-six-input-examples.md), které tímto nahrazujeme, a přes ně [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md), [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) a [099](099-examples-are-content-not-a-choice.md); dále [032](032-frontend-as-static-pages-without-a-build.md) (vlastní vrstva `app.css`, dva sloupce dotazem na kontejner); [`architecture.md`](../architecture.md), §6.3
 
