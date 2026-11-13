@@ -33,6 +33,7 @@ import {
   artifactNames,
 } from "./ui.js";
 import { renderFacts } from "./facts.js";
+import "./follow.js";
 
 const EXAMPLE_KEY = "dapper-to-efcore";
 
@@ -235,6 +236,7 @@ function renderResult(response) {
       link.className = "link-button";
       link.textContent = artifact.name;
       link.title = "Show this artifact";
+      link.dataset.panel = artifact.id;
       link.addEventListener("click", () => revealPanel(artifact.id));
       origin.append(link);
     });

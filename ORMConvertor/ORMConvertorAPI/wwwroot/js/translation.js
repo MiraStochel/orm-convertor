@@ -41,6 +41,7 @@ import {
   saveBlob,
 } from "./ui.js";
 import { renderFacts } from "./facts.js";
+import "./follow.js";
 import { readZip } from "./zip.js";
 
 // One extension, one language (decision 111): a unit declares the language of its file and
@@ -56,6 +57,11 @@ const EXTENSION_TYPES = {
 };
 
 const STORAGE_KEY = "ormconvertor.translation";
+
+// The described example a screen without remembered units opens with: the shortest input that
+// still shows the breadth - four small entities and one repository of five queries, each
+// handed over in another way. Which one it is, is content of the page.
+const OPENING_EXAMPLE = "order-repository";
 
 const state = {
   sourceOrm: ORM.EFCore,
@@ -81,6 +87,11 @@ const state = {
 };
 
 let unitCounter = 0;
+
+// True while the opening example stands on the screen as it was loaded. It is not the
+// reader's work, so it is not remembered and replacing it asks nothing; the first change -
+// every one of them goes through saveState - makes the screen theirs.
+let openingExampleUntouched = false;
 
 function newUnit(name, contentType, content) {
   return { id: ++unitCounter, name, contentType, content };
@@ -129,6 +140,7 @@ function noteStorageFailure() {
 }
 
 function saveState() {
+  openingExampleUntouched = false;
   if (!storageWorks) return;
   try {
     localStorage.setItem(
@@ -409,6 +421,18 @@ function renderUnits() {
   }
 
   document.getElementById("clear").disabled = state.units.length === 0;
+  document.getElementById("unit-count").textContent = files(state.units.length);
+}
+
+/*
+ * The units stand in a fold, as the entity classes do on the catalog pages: open while the
+ * input is being put together, folded once a conversion has come back - the result shows
+ * what was sent beside what came of it, and the editors would only stand between the Convert
+ * button and the result. A change of the input, or anything that points into an editor,
+ * opens it again.
+ */
+function foldUnits(folded) {
+  document.getElementById("units-pane").open = !folded;
 }
 
 /*
@@ -560,6 +584,7 @@ function renderResult() {
       link.className = "link-button";
       link.textContent = artifact.name;
       link.title = "Show this artifact";
+      link.dataset.panel = artifact.id;
       link.addEventListener("click", () => revealPanel(artifact.id));
       origin.append(link);
     });
@@ -583,12 +608,17 @@ function renderResult() {
 function markFailures(records) {
   clearUnitProblems();
   const container = document.getElementById("units");
+  let marked = false;
   for (const record of records ?? []) {
     if (!record.unit || !positionIn(record.reason)) continue;
     const unit = state.units.find((u) => unitLabel(u) === record.unit);
     const article = unit && container.querySelector(`[data-unit-id="${unit.id}"]`);
-    if (article) showUnitProblem(article, record.reason);
+    if (!article) continue;
+    showUnitProblem(article, record.reason);
+    marked = true;
   }
+  // A marked line is something to read in the editor, so the units stay open over it.
+  foldUnits(!marked);
 }
 
 /* ---- validation (S7): a helper, not the gate - the server stays authoritative */
@@ -710,6 +740,7 @@ async function onConvert() {
   const problems = validate();
   showValidation(problems);
   if (problems.length > 0) {
+    foldUnits(false);
     status.textContent = "The input is not ready to send.";
     return;
   }
@@ -860,9 +891,11 @@ async function onAddFiles(fileList) {
     errorElement.hidden = false;
   }
 
+  if (units.length > 0) dropOpeningExample();
   state.units.push(...units);
   saveState();
   renderUnits();
+  foldUnits(false);
   if (archives.length === 0) return;
   state.unused = { archives, files: unused };
   renderUnused();
@@ -886,6 +919,7 @@ function onLoadExample() {
   if (!example) return;
   if (
     state.units.length > 0 &&
+    !openingExampleUntouched &&
     !confirm(
       `Loading "${example.title}" replaces every unit on the screen and sets the direction to ` +
         `${ORM_LABELS[example.sourceOrm]} → ${ORM_LABELS[example.targetOrm]}. Continue?`,
@@ -894,25 +928,60 @@ function onLoadExample() {
     return;
   }
 
+  showExample(example);
+  saveState();
+  document.getElementById("convert-status").textContent =
+    `Loaded "${example.title}": ${files(example.units.length)}.`;
+}
+
+/** Puts an example on the screen: its direction, its units, no declared dialect. */
+function showExample(example) {
   state.sourceOrm = example.sourceOrm;
   state.targetOrm = example.targetOrm;
   state.sourceDialect = null;
   state.units = example.units.map((unit) => newUnit(unit.name ?? "", unit.contentType, unit.content));
   state.unused = null;
-  saveState();
   showValidation([]);
   renderFrameworkSelects();
   renderSourceDialectSelect();
   renderOfferNote();
   renderUnits();
   renderUnused();
+  foldUnits(false);
+}
+
+/*
+ * A screen that would open with no units opens with an example instead, so that a visit has
+ * something to convert and to read. It is shown, not remembered: until the reader changes
+ * something it comes back on the next visit, and replacing or clearing it asks no question.
+ * Remembered units, and an address that names an example of its own, are left as they are.
+ */
+function showOpeningExample() {
+  if (new URLSearchParams(location.search).has("example")) return;
+  const example = state.examples.find((e) => e.key === OPENING_EXAMPLE);
+  if (!example) return;
+  showExample(example);
+  openingExampleUntouched = true;
+  document.getElementById("example-select").value = example.key;
+  document.getElementById("load-example").disabled = false;
   document.getElementById("convert-status").textContent =
-    `Loaded "${example.title}": ${example.units.length} file${example.units.length === 1 ? "" : "s"}.`;
+    `Showing the example "${example.title}" (${files(example.units.length)}). ` +
+    "Convert it, or replace it with your own files or another example.";
+}
+
+/** The reader's own first unit takes the place of the opening example, not a place beside it. */
+function dropOpeningExample() {
+  if (!openingExampleUntouched) return;
+  state.units = [];
+  document.getElementById("convert-status").textContent = "";
 }
 
 /** Clears the screen and the remembered copy together (decision 056). */
 function onClear() {
-  if (state.units.length > 0 && !confirm("Remove every unit from the screen?")) return;
+  if (state.units.length > 0 && !openingExampleUntouched && !confirm("Remove every unit from the screen?")) {
+    return;
+  }
+  openingExampleUntouched = false;
   state.units = [];
   state.sent = null;
   state.result = null;
@@ -924,6 +993,7 @@ function onClear() {
   renderUnits();
   renderUnused();
   renderResult();
+  foldUnits(false);
 }
 
 /* ---- init --------------------------------------------------------------- */
@@ -959,9 +1029,11 @@ async function init() {
     saveState();
   });
   document.getElementById("add-unit").addEventListener("click", () => {
+    dropOpeningExample();
     state.units.push(newUnit("", offeredTypes(state.sourceOrm)[0], ""));
     saveState();
     renderUnits();
+    foldUnits(false);
   });
   const fileInput = document.getElementById("file-input");
   document.getElementById("add-files").addEventListener("click", () => fileInput.click());
@@ -1000,6 +1072,7 @@ async function init() {
   preselectRequestedExample();
   renderOfferNote();
   renderUnits();
+  if (state.units.length === 0) showOpeningExample();
 }
 
 /*

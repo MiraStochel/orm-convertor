@@ -65,7 +65,9 @@
         <button type="button" id="load-example" class="secondary" disabled>Load example</button>
       </div>
       <small class="hint">
-        Optional. An input is the same customer written in one framework; it loads with that
+        Optional. The page opens with the order repository &mdash; four small entities and
+        five queries, each handed to EF Core in another way &mdash; unless it remembers
+        files of yours; your first file takes its place. An input is the same customer written in one framework; it loads with that
         framework as the target too, and the target can then be switched to any of the six.
         A described example sets the direction the <a href="examples.html">Examples</a> page
         explains it for. Either one replaces the units below.
@@ -111,7 +113,10 @@
         <summary></summary>
         <ul></ul>
       </details>
-      <div id="units"></div>
+      <details id="units-pane" class="example-pane" open>
+        <summary>The input files <small id="unit-count"></small></summary>
+        <div id="units"></div>
+      </details>
     </section>
 
     <section>
@@ -155,6 +160,8 @@
         Each artifact names the units it came from and each unit the artifacts it went into:
         that pairing is the server&rsquo;s statement. Point at a fact below, or at an
         underlined word in a panel, and every place the same fact shows itself lights up.
+        Where the two columns stand side by side, each scrolls by itself, and pointing at a
+        panel or at an underlined word in one moves the other to what it is linked with.
       </p>
       <h3>Facts</h3>
       <p class="muted-note">

@@ -18,7 +18,7 @@
 /* Pico grows the root font with the window, up to 21 px; the pages are prose beside code and
    read better smaller. Everything is sized in rem or em, so the one cap scales all of it. */
 :root {
-  font-size: min(var(--pico-font-size), 17px);
+  font-size: min(var(--pico-font-size), 15px);
 }
 
 /* ---- shared chrome ---------------------------------------------------- */
@@ -258,6 +258,13 @@ article.artifact {
   width: auto;
 }
 
+/* The translation screen's Remove stands in a row with a field and a select, and beside the
+   toolbar above it: it is a button of the page's size, as high as the controls it sits with. */
+#units .unit-header button {
+  padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
+  font-size: 1rem;
+}
+
 .unit-error {
   color: var(--pico-del-color);
   font-size: 0.85rem;
@@ -394,9 +401,30 @@ details.unused-files ul {
   align-items: start;
 }
 
+/* Side by side, each column is a window with its own scroll bar: pointing at a fact or a
+   panel in one moves the other to what it is linked with (js/follow.js), which a column as
+   long as the page could not do. The window scrolls, so a panel in it shows its whole text
+   and keeps only its sideways scrolling. The padding leaves room for the outline of the
+   panel a jump marks. */
 @container (min-width: 58rem) {
   .compare {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .compare .pane-stack {
+    max-height: max(20rem, 90vh);
+    overflow-y: auto;
+    padding: 0.4rem;
+    border: var(--app-panel-border);
+    border-radius: var(--pico-border-radius);
+  }
+
+  .compare .pane-stack pre {
+    max-height: none;
+  }
+
+  .compare .pane-stack > article:last-child {
+    margin-bottom: 0;
   }
 }
 

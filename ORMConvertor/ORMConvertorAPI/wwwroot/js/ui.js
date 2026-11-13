@@ -337,6 +337,7 @@ function renderOrigin(element, units, unitPanelId) {
     link.className = "link-button";
     link.textContent = unit;
     link.title = "Show this input unit";
+    link.dataset.panel = id;
     link.addEventListener("click", () => revealPanel(id));
     element.append(link);
   });
