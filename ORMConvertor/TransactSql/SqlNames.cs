@@ -39,4 +39,78 @@ public static class SqlNames
 
     /// <summary>A name in T-SQL's delimiters, a closing bracket inside it doubled.</summary>
     public static string Delimited(string name) => $"[{name.Replace("]", "]]")}]";
+
+    /// <summary>
+    /// The index just past the delimited name that opens with the bracket at
+    /// <paramref name="start"/>, a doubled closing bracket read as a character of the name;
+    /// the end of the text where the name is not closed.
+    /// </summary>
+    public static int EndOfDelimited(string sql, int start)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+
+        var closing = ClosingBracket(sql, start);
+        return closing < 0 ? sql.Length : closing + 1;
+    }
+
+    /// <summary>
+    /// The statement with every delimited name respelled: <paramref name="spelling"/> takes
+    /// what stands between the brackets, as the text holds it, and gives what is to stand
+    /// there. String literals are skipped, so that a bracket inside a value is no name, and
+    /// inside a name an apostrophe opens no literal. For a host that reads characters of a
+    /// name as its own (decision 217) - the delimited name is the only place where the shared
+    /// writer puts a character it did not choose outside a literal.
+    /// </summary>
+    public static string RespellDelimited(string sql, Func<string, string> spelling)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        ArgumentNullException.ThrowIfNull(spelling);
+
+        var respelled = new System.Text.StringBuilder(sql.Length);
+        var insideLiteral = false;
+
+        for (var i = 0; i < sql.Length; i++)
+        {
+            var character = sql[i];
+
+            if (character == '\'')
+            {
+                insideLiteral = !insideLiteral;
+            }
+
+            var closing = !insideLiteral && character == '[' ? ClosingBracket(sql, i) : -1;
+            if (closing < 0)
+            {
+                respelled.Append(character);
+                continue;
+            }
+
+            respelled.Append('[').Append(spelling(sql[(i + 1)..closing])).Append(']');
+            i = closing;
+        }
+
+        return respelled.ToString();
+    }
+
+    /// <summary>The index of the bracket that closes the name opened at <paramref name="start"/>, or -1.</summary>
+    private static int ClosingBracket(string sql, int start)
+    {
+        for (var i = start + 1; i < sql.Length; i++)
+        {
+            if (sql[i] != ']')
+            {
+                continue;
+            }
+
+            if (i + 1 < sql.Length && sql[i + 1] == ']')
+            {
+                i++;
+                continue;
+            }
+
+            return i;
+        }
+
+        return -1;
+    }
 }

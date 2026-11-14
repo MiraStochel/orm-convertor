@@ -64,12 +64,17 @@ services:
   # dba.stackexchange.com for the SEDE query set (decision 208), loaded the same way in a few
   # minutes. LDBC_SCALE_FACTOR picks another published scale factor, or none; FIBEN_DATASET
   # another commit of IBM/fiben-benchmark, or none; SEDE_DATASET another site and date of
-  # the dump with SEDE_DATASET_URL and SEDE_DATASET_MD5 of its archive, or none.
+  # the dump with SEDE_DATASET_URL and SEDE_DATASET_MD5 of its archive, or none; WWI_BACKUP
+  # another release of Microsoft/sql-server-samples, or none. Each none builds the image
+  # without that database, which is how the system is built when a publisher's address is
+  # gone (decision 218); without WideWorldImporters, ORMCONVERTOR_CATALOG_DATABASE names the
+  # catalog of the application.
   mssql_db:
     build:
       context: .
       dockerfile: database.Dockerfile
       args:
+        WWI_BACKUP: ${WWI_BACKUP:-wide-world-importers-v1.0}
         LDBC_SCALE_FACTOR: ${LDBC_SCALE_FACTOR:-1}
         FIBEN_DATASET: ${FIBEN_DATASET:-96eaffc60cc824b8f545cd29adffc2a170e08d04}
         SEDE_DATASET: ${SEDE_DATASET:-dba.stackexchange.com-2024-04-06}
@@ -99,13 +104,16 @@ services:
   # 117) - at scale factor 0.1 here, loaded in seconds; LDBC_TEST_SCALE_FACTOR picks another
   # one LDBC publishes a validation set for (0.1 to 10). The FIBEN benchmark and the SEDE data
   # stay out: their catalogs run on demand against mssql_db, never as part of a build
-  # (decisions 149 and 208).
+  # (decisions 149 and 208). So does the sample database, which no suite reads - what is left
+  # is the data the project holds a copy of, so the profile is built without a publisher's
+  # address (decision 218).
   test_db:
     profiles: ["test"]
     build:
       context: .
       dockerfile: database.Dockerfile
       args:
+        WWI_BACKUP: none
         LDBC_SCALE_FACTOR: ${LDBC_TEST_SCALE_FACTOR:-0.1}
         FIBEN_DATASET: none
         SEDE_DATASET: none

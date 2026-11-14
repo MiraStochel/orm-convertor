@@ -14,7 +14,7 @@ namespace ORMConvertorAPI.Data;
 /// with named queries, a tour of the query vocabulary, and one long query; then two
 /// applications, one in each ecosystem, whose files are mostly code around the mapping and
 /// the queries, so that what the tool takes out of them is the example (decision 111); and
-/// last five excerpts of real open-source projects, one per source framework but NHibernate,
+/// last the excerpts of real open-source projects, from every source framework but NHibernate,
 /// vendored under SampleData/ThirdParty with their licences (decision 138). The small
 /// examples are built from the samples the translation screen offers; the larger ones have
 /// classes of their own.

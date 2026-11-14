@@ -8,7 +8,7 @@ Autoritativní popis projektu, **členěný podle žánru, ne podle času** (roz
 | [`subset.md`](subset.md) | **Co se přeloží a co ne**, konstrukce po konstrukci (žánr `architecture.md`). | živé |
 | [`../README.md`](../README.md) | Co nástroj dělá a co **nárokuje** (sekce *Guarantees*, kanonicky); anglicky, protože jeho adresátem je konzument nástroje. | živé |
 | [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje a testuje** (rozh. [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); vedle kořenového README jediný živý dokument mimo `docs/`, proto anglicky. | živé |
-| [`open-items.md`](open-items.md) | Co **zbývá**; `Na řadě` říká, kde se pokračuje. | živé; hotové mizí |
+| [`open-items.md`](open-items.md) | Na čem lze **pokračovat**: otevřená rozhodnutí a práce k implementaci. | živé; hotové mizí |
 | [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` (a `revidováno` před implementací) |
 | [`audits/`](audits/README.md) | Co jsme **kdy věděli**. | neměnné |
 | [`runs/`](runs/README.md) | Co se **kdy naměřilo** a **jak se běží**: záznamy běhů sad a měření s commitem (rozh. [167](decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)) a metodika běhů (rozh. [168](decisions/168-the-overview-of-runs-carries-the-method-of-runs.md)). | záznamy neměnné, metodika živá, rejstřík přibývá |

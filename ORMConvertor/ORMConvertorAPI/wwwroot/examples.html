@@ -133,7 +133,7 @@
 
     <h2>The examples</h2>
     <p>
-      Twenty-one examples. The first seven are grouped by the boundary the translation
+      The first seven examples are grouped by the boundary the translation
       crosses: two stay inside .NET, two inside Java, and three cross between the
       ecosystems &mdash; the last two over a whole domain rather than a single class.
       The next three are about queries: what a target does with a construct its
@@ -142,7 +142,7 @@
       what the tool reads and writes &mdash; one of them is a single, very long query.
       The next two are application code as a project has it, where the mapping and the
       queries are a small part of the text, and show what the tool takes out of it. The
-      last five are not written for the tool at all: they are excerpts of real
+      rest are not written for the tool at all: they are excerpts of real
       open-source projects, taken at one commit and changed only where the tool reads a
       construct in another form. Below each one, the records list every place where the
       output could not carry a fact of the input, or states something the input did not.
@@ -221,6 +221,7 @@
           <li><a href="#chinook-dapper">Chinook: Dapper &rarr; EF Core</a> &mdash; a repository layer in literal SQL</li>
           <li><a href="#chinook-efcore">Chinook: EF Core &rarr; Hibernate</a> &mdash; the same layer as the project wrote it in LINQ</li>
           <li><a href="#jpetstore-mybatis">JPetStore: MyBatis &rarr; Dapper</a> &mdash; the MyBatis team&rsquo;s reference shop</li>
+          <li><a href="#cofoundry-pages">Cofoundry: EF Core &rarr; MyBatis</a> &mdash; 29 entities configured in code, 45 queries out of 38 handlers</li>
         </ul>
       </article>
     </div>
@@ -929,8 +930,8 @@
 
     <h2>Real projects</h2>
     <p>
-      Every example above was written for this page. The five below were not: they are
-      excerpts of open-source projects, one for each source framework but NHibernate,
+      Every example above was written for this page. The ones below were not: they are
+      excerpts of open-source projects, from every source framework but NHibernate,
       taken at one commit under the project&rsquo;s own licence. The files are the
       project&rsquo;s, changed only where the tool reads a construct in another form or
       does not translate it at all &mdash; statements that write, code that only serves
@@ -1126,6 +1127,59 @@
         for &mdash; column names, result types, the <code>&lt;cache/&gt;</code> &mdash;
         and an Incompleteness says that an <code>&lt;id&gt;</code> marks a row of the
         result, not the primary key of a table.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="cofoundry-pages" data-example="cofoundry-pages">
+      <h3>Cofoundry: EF Core &rarr; MyBatis</h3>
+      <p>
+        <a href="https://github.com/cofoundry-cms/cofoundry">Cofoundry</a>, a content
+        management system on ASP.NET Core, keeps its tables in EF Core with the mapping in
+        code. The input is one area of its data layer: 29 entity classes &mdash; pages with
+        their versions, blocks, tags, groups and access rules, page directories with their
+        closure table, templates, users, roles and permissions &mdash;, an
+        <code>IEntityTypeConfiguration</code> class for each, the context, and 38 query
+        handlers that read the context. Handlers with no query for the tool to take &mdash;
+        a yes/no <code>AnyAsync</code>, a search composed at run time from optional criteria
+        &mdash; are left out, and so is the one write. The project composes most queries
+        from its own extension methods over <code>IQueryable</code>
+        (<code>FilterActive</code>, <code>FilterByPageId</code>); the tool does not see the
+        body of a method, so each call is written as the <code>Where</code> its body
+        consists of, with the call in a note at the end of the line. Out of it come 29 plain
+        Java classes, each with a result map &mdash; a composite key, that of the closure
+        table among them, as two <code>&lt;id&gt;</code> columns &mdash; and 45 queries,
+        each a <code>&lt;select&gt;</code> in a mapper document beside the method of a
+        mapper interface. A filter becomes a <code>WHERE</code>,
+        <code>SingleOrDefaultAsync</code> and <code>FirstOrDefaultAsync</code>
+        <code>TOP (1)</code> with a Convention record, a <code>Contains</code> over a
+        collection of ids an <code>IN</code> over a <code>&lt;foreach&gt;</code>, the
+        correlated <code>Any</code> an <code>EXISTS</code>, and the table <code>User</code>
+        goes out in brackets, being a reserved word of T-SQL. The records run long, and most
+        are losses of two kinds. One is the mapping a result map has no place for:
+        nullability, lengths, foreign keys, key generation, the table. The other is what the
+        tool leaves of the project&rsquo;s code: <code>Include</code> and
+        <code>ThenInclude</code>, which change no row; a named projection, for which the
+        whole entity is materialized; and fluent calls outside the subset the tool reads,
+        such as <code>IsUtc()</code> and <code>IsCharType()</code>. With Keycloak above,
+        Cofoundry is one of the two applications of the tool&rsquo;s case study, one on each
+        side of the boundary between the ecosystems.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>

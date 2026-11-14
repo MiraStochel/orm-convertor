@@ -72,6 +72,19 @@ public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descripto
             return p.IsCollection ? $"(?{position})" : $"?{position}";
         });
 
+        // Inside a bracketed identifier - the only delimited form the shared writer writes -
+        // an implementation reads characters as its own: a ? as a parameter in both, and
+        // Hibernate a colon, a backslash and the two quotes besides (decision 217). Where the
+        // implementation has an escape, each goes out behind it and the name reaches the
+        // database as it stands; where it has none, the query has no spelling the
+        // implementation would run and is refused here rather than when it runs.
+        if (SpellBracketedNamesFor(text, profile.NativeSqlReadsInIdentifiers, profile.NativeSqlIdentifierEscape) is not { } spelled)
+        {
+            return [];
+        }
+
+        text = spelled;
+
         // An implementation that reads a mark of named parameters in the text of a native
         // query wherever it stands - EclipseLink's # inside [#] - is told to read another
         // character, one the text does not hold, so that nothing in it is a named parameter

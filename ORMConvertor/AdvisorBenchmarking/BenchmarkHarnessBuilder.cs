@@ -27,7 +27,7 @@ public static class BenchmarkHarnessBuilder
     {
         if (!Generators.TryGetValue(framework, out var generator))
         {
-            throw new NotSupportedException($"Benchmark harness for framework {framework} is not implemented yet.");
+            throw new NotSupportedException($"The Advisor measures Dapper and EF Core only; there is no benchmark harness for framework {framework}.");
         }
 
         return generator(sources, catalogReader);

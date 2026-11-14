@@ -1,7 +1,7 @@
 # 211 — Nativní dotaz EclipseLinku, jehož text drží `#`, dostane hintem jinou značku pojmenovaných parametrů
 
 Datum: 2026-11-09
-Stav: platí
+Stav: platí; důsledek o `?` uvnitř identifikátoru nahrazuje 217
 Požadavky: F9, F10, F11, T3
 Podklad: rozhodnutí [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), [123](123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md) a [208](208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md); [záznam běhu SEDE 2026-11-08](../runs/2026-11-08-sede-2.md)
 
@@ -39,6 +39,10 @@ Fakta drží `eclipselink/NativeSqlHashClaimsTest` (selhání bez hintu včetně
 ## Důsledky
 
 - **Dotazy SEDE s `[#]` EclipseLink spustí**; buňky, které selhaly na „The index 1 is out of range", se srovnají se zdrojem.
-- **`?` uvnitř identifikátoru nebo literálu hint neřeší** — EclipseLink ho čte jako poziční parametr v závorkách i v uvozovkách (změřeno touž sondou: `[a?b]` i `"a?b"` selžou). Katalogy ho v aliasech nemají a běh SEDE ho jako příčinu nenašel; zůstává vyslovenou mezí v [`subset.md`](../subset.md).
+- **`?` uvnitř identifikátoru hint neřeší** — EclipseLink ho čte jako poziční parametr v závorkách i v uvozovkách (změřeno touž sondou: `[a?b]` i `"a?b"` selžou); v řetězcovém literálu je `?` text. Katalogy ho v aliasech nemají a běh SEDE ho jako příčinu nenašel; zůstává vyslovenou mezí v [`subset.md`](../subset.md).
 - **Hibernate se nemění**; jeho nativní SQL `#` čte jako text.
 - **Dotčená místa:** `JpaImplementationProfile`, `EclipseLinkDescriptor.Profile`, `JpaNativeSqlQueryBuilder.Emit`; `architecture.md` (§5, úniková cesta JPA), `subset.md`, `traceability.md` (F9).
+
+## Historie
+
+- **2026-11-14, oprava věcného omylu:** důsledek o `?` zněl „uvnitř identifikátoru nebo literálu". Měření, které větu teprve podložilo testem (`eclipselink/NativeSqlReadingClaimsTest`; revize 2026-11-13, nález 3.2), drží identifikátor a literál vyvrací — `'a?b'` EclipseLink čte jako text. Věta je opravená na místě, volba se nemění. Téhož dne důsledek nahradilo rozh. [217](217-what-the-host-of-native-sql-reads-inside-a-bracketed-name-goes-out-behind-its-escape-and-refuses-the-query-where-it-has-none.md).

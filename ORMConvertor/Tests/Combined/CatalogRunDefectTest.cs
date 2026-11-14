@@ -11,11 +11,13 @@ namespace Tests.Combined;
 /// <c>Class</c>, whose getter would be <c>getClass()</c> (decision 212); a
 /// <c>uniqueidentifier</c> column, for which MyBatis has no type handler (decision 210); and
 /// a <c>#</c> in the native SQL of EclipseLink, which it reads as the mark of a named
-/// parameter (decision 211). One entity - stated by EF Core where a JPA entity needs its key,
+/// parameter (decision 211), with what the measurement of that decision's limit found
+/// beside it: the characters either JPA implementation reads as its own inside a bracketed
+/// name (decision 217). One entity - stated by EF Core where a JPA entity needs its key,
 /// by Dapper beside an SQL text -, converted without a catalog.
 /// The facts each rule rests on are measured by the Java suite's
-/// <c>mybatis/ResultMappingClaimsTest</c> and the <c>NativeSqlHashClaimsTest</c> of
-/// <c>eclipselink</c> and <c>hibernate</c>.
+/// <c>mybatis/ResultMappingClaimsTest</c> and the <c>NativeSqlHashClaimsTest</c> and
+/// <c>NativeSqlReadingClaimsTest</c> of <c>eclipselink</c> and <c>hibernate</c>.
 /// </summary>
 public class CatalogRunDefectTest
 {
@@ -227,5 +229,81 @@ public class CatalogRunDefectTest
 
         Assert.Contains("SELECT b.Name AS [#]", method);
         Assert.DoesNotContain("setHint", method);
+    }
+
+    /* ---- a character a JPA implementation reads inside a bracketed name ---------------- */
+
+    private const string ReadNames = @"SELECT b.Name AS [a?b], b.Id AS [c:d], b.Class AS [it's], b.RevisionGuid AS [e\f] FROM Badge b WHERE b.Id = @id AND b.Name <> 'x?y'";
+
+    /// <summary>
+    /// Hibernate does not know the brackets of T-SQL and reads a ?, a colon, a backslash and a
+    /// quote inside them as its own; a backslash before each passes it as text (decision 217).
+    /// The text block of Java doubles the backslash, the literal and the bare SQL stand as
+    /// they were, and the parameter after the apostrophe is still a parameter.
+    /// </summary>
+    [Fact]
+    public void HibernateWritesWhatItReadsInABracketedNameBehindABackslash()
+    {
+        var result = Convert(ORMEnum.Hibernate, ReadNames);
+        var method = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.JavaQuery).Content;
+        var sql = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+        Assert.DoesNotContain(result.Records, r => r is { Kind: ConversionRecordKind.Failure, Feature: not null });
+        Assert.Contains(@"AS [a\\?b]", method);
+        Assert.Contains(@"AS [c\\:d]", method);
+        Assert.Contains(@"AS [it\\'s]", method);
+        Assert.Contains(@"AS [e\\\\f]", method);
+        Assert.Contains("b.Id = ?1", method);
+        Assert.Contains("'x?y'", method);
+        Assert.Contains(".setParameter(1, id)", method);
+
+        Assert.Contains("AS [a?b]", sql);
+        Assert.Contains(@"AS [e\f]", sql);
+    }
+
+    /// <summary>
+    /// EclipseLink reads a ? inside a bracketed name as a positional parameter and has no
+    /// spelling that keeps it text, so the query is refused with a record that names the name
+    /// instead of going out as a method that fails when it runs.
+    /// </summary>
+    [Fact]
+    public void EclipseLinkRefusesAQuestionMarkInABracketedName()
+    {
+        var result = Convert(ORMEnum.EclipseLink, "SELECT b.Name AS [a?b] FROM Badges b");
+
+        Assert.DoesNotContain(result.Sources, s => s.ContentType is ConversionContentType.JavaQuery or ConversionContentType.SqlQuery);
+        var failure = Assert.Single(result.Records, r => r is { Kind: ConversionRecordKind.Failure, Feature: AbstractWrappers.Descriptors.QueryFeature.Projection });
+        Assert.Contains("[a?b]", failure.Reason);
+        Assert.Contains("no artifact was generated", failure.Reason);
+    }
+
+    /// <summary>What EclipseLink reads as text in a bracketed name goes out as it stands, and a ? in a literal is no matter of a name.</summary>
+    [Fact]
+    public void EclipseLinkWritesTheOtherCharactersOfABracketedNameAsTheyStand()
+    {
+        var result = Convert(ORMEnum.EclipseLink, @"SELECT b.Id AS [c:d], b.Class AS [it's], b.RevisionGuid AS [e\f] FROM Badge b WHERE b.Id = @id AND b.Name <> 'x?y'");
+        var method = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.JavaQuery).Content;
+
+        Assert.DoesNotContain(result.Records, r => r is { Kind: ConversionRecordKind.Failure, Feature: not null });
+        Assert.Contains("AS [c:d]", method);
+        Assert.Contains("AS [it's]", method);
+        Assert.Contains(@"AS [e\\f]", method);
+        Assert.Contains("b.Id = ?1", method);
+        Assert.Contains("'x?y'", method);
+    }
+
+    /// <summary>
+    /// The respelling of placeholders reads a bracketed name as a name: the apostrophe in it
+    /// opens no literal, so the parameter after it is respelled, and an @ in it is no placeholder.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.MyBatis, "#{id}")]
+    [InlineData(ORMEnum.EclipseLink, "?1")]
+    public void AParameterAfterAnApostropheInABracketedNameIsRespelled(ORMEnum target, string placeholder)
+    {
+        var query = Query(Convert(target, "SELECT b.Name AS [it's @id] FROM Badge b WHERE b.Id = @id"));
+
+        Assert.Contains("AS [it's @id]", query);
+        Assert.Contains($"b.Id = {placeholder}", query);
     }
 }

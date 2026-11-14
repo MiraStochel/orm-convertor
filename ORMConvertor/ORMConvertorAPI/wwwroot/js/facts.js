@@ -329,8 +329,9 @@ export function renderFacts(container, facts, { inputPanels, artifactPanels }) {
 
   /* ---- hover: a row lights its underlines, an underline lights its rows ------------ */
 
-  const marksOf = (index) =>
-    document.querySelectorAll(`#result mark.tok[data-link~="${index}"]`);
+  // Every underline on a page is this band's - nothing else writes a mark.tok - so the page
+  // is searched whole and the band needs no word about where its page keeps the panels.
+  const marksOf = (index) => document.querySelectorAll(`mark.tok[data-link~="${index}"]`);
 
   let lit = [];
   light = (indexes) => {
@@ -354,27 +355,23 @@ export function renderFacts(container, facts, { inputPanels, artifactPanels }) {
     if (row) light([row.dataset.fact]);
   });
   body.addEventListener("mouseleave", () => light([]));
-
-  wireMarks();
 }
 
 /*
- * The lighting function of the band currently on the screen. The result section outlives
- * the band - every conversion renders a new one - so the section's own listeners are attached
- * once and call whatever band is current.
+ * The lighting function of the band currently on the screen. The page outlives the band -
+ * every conversion renders a new one - so the listeners for the underlines are attached once,
+ * to the document, and call whatever band is current. The module names no element of a page:
+ * the translation screen and the tutorial keep their result under different ids, and both
+ * get the behaviour by importing it (as with follow.js).
  */
 let light = () => {};
-let marksWired = false;
 
-function wireMarks() {
-  if (marksWired) return;
-  marksWired = true;
-  const result = document.getElementById("result");
-  result.addEventListener("mouseover", (event) => {
-    const mark = event.target.closest("mark.tok");
-    if (mark) light(mark.dataset.link.split(" "));
-  });
-  result.addEventListener("mouseout", (event) => {
-    if (event.target.closest("mark.tok")) light([]);
-  });
-}
+document.addEventListener("mouseover", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const mark = event.target.closest("mark.tok");
+  if (mark) light(mark.dataset.link.split(" "));
+});
+document.addEventListener("mouseout", (event) => {
+  if (!(event.target instanceof Element)) return;
+  if (event.target.closest("mark.tok")) light([]);
+});

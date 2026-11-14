@@ -86,6 +86,16 @@ public static class HibernateDescriptor
         // and a position named twice binds one value twice.
         NativeQueryExpandsCollection: true,
 
+        // Measured against 7.4.5.Final (decision 217, the Java suite's
+        // hibernate/NativeSqlReadingClaimsTest): the reading of a native query's text does not
+        // know the square brackets of T-SQL, so inside [..] a ? is a parameter, :name a named
+        // one, a backslash is swallowed with the next character passed as text, and an
+        // apostrophe or a quote opens a literal in which a later parameter is not found. A
+        // backslash before each of the five passes it as text, beside bound parameters too,
+        // and the name reaches the database as the source wrote it.
+        NativeSqlReadsInIdentifiers: "?:\\'\"",
+        NativeSqlIdentifierEscape: '\\',
+
         // Measured against 7.4.5.Final by the first run of the FIBEN catalog (decision 149):
         // "join POSTALADDRESS oPostalAddress" beside the joined entity ADDRESS, whose column
         // POSTALADDRESS holds the key, joined that column, and every path through the alias

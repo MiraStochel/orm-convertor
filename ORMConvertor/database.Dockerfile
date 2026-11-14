@@ -9,18 +9,30 @@ RUN --mount=type=cache,target=/var/lib/apt \
     --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
     apt-get install -y --no-install-recommends curl zstd unzip p7zip-full python3 && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /var/opt/mssql/backup && \
-    curl -L -o /var/opt/mssql/backup/WideWorldImporters-Full.bak \
-    https://github.com/Microsoft/sql-server-samples/releases/download/wide-world-importers-v1.0/WideWorldImporters-Full.bak
+    rm -rf /var/lib/apt/lists/*
 
 # Where the data sets come from (decision 215): the project's own copies, attached to the
 # release data_sets of the repository, are asked first, the publisher's address after them.
 # fetch-dataset.sh tries the addresses in order and checks the file against
-# database/datasets.sha256 when its name is listed there.
+# database/datasets.sha256 when its name is listed there. The project holds a copy of what
+# the test profile is built from; every other set is a foreign source of the build, and each
+# has a switch that builds the image without it (decision 218). A set found nowhere fails
+# the build with the name of that switch.
 ARG DATASETS_URL=https://github.com/MiraStochel/orm-convertor/releases/download/data_sets
 COPY database/fetch-dataset.sh database/datasets.sha256 /opt/datasets/
 RUN sed -i 's/\r$//' /opt/datasets/fetch-dataset.sh && chmod +x /opt/datasets/fetch-dataset.sh
+
+# The backup of the sample database WideWorldImporters, which init-db.sh restores on the
+# first start. WWI_BACKUP names the release of Microsoft/sql-server-samples that carries it;
+# none leaves the sample database out, and the test profile does: its suites never read it.
+ARG WWI_BACKUP=wide-world-importers-v1.0
+RUN mkdir -p /var/opt/mssql/backup && \
+    if [ "${WWI_BACKUP}" != "none" ]; then \
+        /opt/datasets/fetch-dataset.sh /var/opt/mssql/backup/WideWorldImporters-Full.bak \
+            "${DATASETS_URL}/WideWorldImporters-Full.bak" \
+            "https://github.com/Microsoft/sql-server-samples/releases/download/${WWI_BACKUP}/WideWorldImporters-Full.bak" || \
+        { echo "No WideWorldImporters backup of ${WWI_BACKUP}; WWI_BACKUP=none builds the image without WideWorldImporters." >&2; exit 1; }; \
+    fi
 
 # The LDBC SNB Interactive v1 data set of the second database, LdbcSnb (decision 110). The
 # archive is fetched while the image is built, so the container starts without the network,
@@ -51,7 +63,8 @@ RUN case "${LDBC_SCALE_FACTOR}" in \
               { [ $? -eq 1 ] && \
                 curl -fL "https://datasets.ldbcouncil.org/interactive-v1/validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst" \
                     | zstd -dc | tar -x -C /opt/ldbc "${file}" && \
-                zstd -q --rm "/opt/ldbc/${file}"; }; } ;; \
+                zstd -q --rm "/opt/ldbc/${file}"; } || \
+              { echo "No LDBC validation set of scale factor ${LDBC_SCALE_FACTOR}; LDBC_SCALE_FACTOR=none builds the image without LdbcSnb." >&2; exit 1; }; } ;; \
     esac
 
 # The FIBEN benchmark of the third database, Fiben (decision 149): data.zip of IBM/fiben-benchmark
@@ -72,21 +85,27 @@ RUN mkdir -p /opt/fiben && \
 # on the first start. The name of the data set is the site and the date of the dump, the
 # archive is checked against the MD5 the item publishes for it, so that a replaced file is a
 # failed build and not another data set under the same name; none leaves the database out.
-# The tools of the loader: 7z unpacks the archive, python3 turns the XML into CSV. archive.org
-# serves the file slowly and drops a connection after an hour or two, so the download resumes
-# where it stopped, up to thirty times.
+# The tools of the loader: 7z unpacks the archive, python3 turns the XML into CSV. A copy of
+# our own is asked first, as for every set; archive.org serves the file slowly and drops a
+# connection after an hour or two, so the download from there resumes where it stopped, up
+# to thirty times.
 ARG SEDE_DATASET=dba.stackexchange.com-2024-04-06
 ARG SEDE_DATASET_URL=https://archive.org/download/stackexchange/dba.stackexchange.com.7z
 ARG SEDE_DATASET_MD5=d0f417b3c3c9210ed32623a071651411
 RUN mkdir -p /opt/sede && \
     if [ "${SEDE_DATASET}" != "none" ]; then \
-        curl -fL --retry 30 --retry-delay 15 --retry-all-errors -C - -o "/opt/sede/${SEDE_DATASET}.7z" "${SEDE_DATASET_URL}" && \
-        if [ -n "${SEDE_DATASET_MD5}" ]; then echo "${SEDE_DATASET_MD5}  /opt/sede/${SEDE_DATASET}.7z" | md5sum -c -; fi; \
+        archive="/opt/sede/${SEDE_DATASET}.7z" && \
+        { /opt/datasets/fetch-dataset.sh "${archive}" "${DATASETS_URL}/${SEDE_DATASET}.7z" || \
+          { [ $? -eq 1 ] && \
+            curl -fL --retry 30 --retry-delay 15 --retry-all-errors -C - -o "${archive}" "${SEDE_DATASET_URL}"; } || \
+          { echo "No SEDE data set ${SEDE_DATASET}; SEDE_DATASET=none builds the image without Sede." >&2; exit 1; }; } && \
+        if [ -n "${SEDE_DATASET_MD5}" ]; then echo "${SEDE_DATASET_MD5}  ${archive}" | md5sum -c -; fi; \
     fi
 
 # The scripts are shared with the test suite, which checks out with CRLF on Windows; sqlcmd
 # and bash here want LF, so the line endings are normalized on the way in. The FIBEN and the
-# SEDE folders go whole: their judges, judge.tsv, exist only from the first documented run on.
+# SEDE folders go whole: a judge, judge.tsv, exists only once a documented run has made it -
+# FIBEN has one, SEDE gets its from a run whose source is the catalog's text (decision 209).
 COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/indexes.sql database/ldbc/validation.sql database/ldbc/load-ldbc.sh /opt/ldbc/
 COPY database/fiben/ /opt/fiben/
 COPY database/sede/ /opt/sede/

@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "ORMConvertor",
-    "version": "2.2.0"
+    "version": "2.4.1"
   },
   "servers": [
     {
@@ -196,6 +196,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FibenCatalogDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sede": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "Sede",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SedeCatalogDefinition"
                 }
               }
             }
@@ -1523,6 +1543,140 @@
             "type": "string"
           }
         }
+      },
+      "SedeCatalogDefinition": {
+        "required": [
+          "sourceOrm",
+          "dataSet",
+          "entities",
+          "queries"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "dataSet": {
+            "type": "string"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SedeQueryDefinition"
+            }
+          }
+        }
+      },
+      "SedeParameterDefinition": {
+        "required": [
+          "name",
+          "sqlType",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sqlType": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "SedeQueryDefinition": {
+        "required": [
+          "key",
+          "querySetId",
+          "set",
+          "title",
+          "description",
+          "parameters",
+          "tables",
+          "columns",
+          "ordered",
+          "orderingKey",
+          "sql",
+          "sedeSql",
+          "translation",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "querySetId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "set": {
+            "$ref": "#/components/schemas/SedeSet"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SedeParameterDefinition"
+            }
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ordered": {
+            "type": "boolean"
+          },
+          "orderingKey": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sql": {
+            "type": "string"
+          },
+          "sedeSql": {
+            "type": "string"
+          },
+          "translation": {
+            "$ref": "#/components/schemas/SedeTranslation"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "SedeSet": {
+        "type": "integer"
+      },
+      "SedeTranslation": {
+        "type": "integer"
       },
       "SourcePosition": {
         "required": [

@@ -28,23 +28,23 @@
       "abstractwrappers": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.4.0, )",
-          "Model": "[2.4.0, )"
+          "Common": "[2.4.1, )",
+          "Model": "[2.4.1, )"
         }
       },
       "common": {
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.4.0, )"
+          "Model": "[2.4.1, )"
         }
       },
       "csharpentityparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.4.0, )",
+          "AbstractWrappers": "[2.4.1, )",
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.4.0, )"
+          "Model": "[2.4.1, )"
         }
       },
       "model": {
@@ -53,10 +53,10 @@
       "transactsql": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.4.0, )",
-          "Common": "[2.4.0, )",
+          "AbstractWrappers": "[2.4.1, )",
+          "Common": "[2.4.1, )",
           "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.78.1, )",
-          "Model": "[2.4.0, )"
+          "Model": "[2.4.1, )"
         }
       },
       "Microsoft.SqlServer.TransactSql.ScriptDom": {

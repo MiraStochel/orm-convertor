@@ -389,6 +389,53 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         return true;
     }
 
+    /// <summary>
+    /// The text for a host that reads characters of a bracketed name as its own (decision
+    /// 217) - a ? as a parameter, a colon as a named one, an apostrophe as the start of a
+    /// literal. The bracketed name is the only delimited form the shared writer writes, and
+    /// the only place outside a literal where the text holds a character the writer did not
+    /// choose. Where the host has an escape, each character of <paramref name="read"/> inside
+    /// a name goes out behind it and the name reaches the database as the source wrote it;
+    /// where it has none, the query has no spelling the host would run, so it is refused
+    /// with a record that names the name instead of going out as a method that fails when it
+    /// runs. Null when it refused.
+    /// </summary>
+    /// <param name="text">The statement as the host is handed it, its placeholders already respelled.</param>
+    /// <param name="read">The characters the host reads as its own inside a bracketed name, as a run measured them.</param>
+    /// <param name="escape">The character that, written before one of them, makes the host pass it as text; null where it has none.</param>
+    protected string? SpellBracketedNamesFor(string text, string read, char? escape)
+    {
+        var characters = read.ToCharArray();
+        string? unspoken = null;
+
+        var spelled = SqlNames.RespellDelimited(text, name =>
+        {
+            if (name.IndexOfAny(characters) < 0)
+            {
+                return name;
+            }
+
+            if (escape is null)
+            {
+                unspoken ??= name;
+                return name;
+            }
+
+            return string.Concat(name.Select(c => read.Contains(c, StringComparison.Ordinal) ? $"{escape}{c}" : c.ToString()));
+        });
+
+        if (unspoken is null)
+        {
+            return spelled;
+        }
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The native SQL names [{unspoken}], and {Descriptor.Framework} reads the {unspoken[unspoken.IndexOfAny(characters)]} inside a bracketed name as its own - a parameter of the query or the start of a literal - and has no spelling that keeps it text; no artifact was generated.",
+            QueryFeature.Projection);
+        return null;
+    }
+
     private string? RenderSetOperation(SetOperationInstruction instruction, out string? resultEntity)
     {
         var left = RenderOperand(instruction.Left, out var leftEntity);

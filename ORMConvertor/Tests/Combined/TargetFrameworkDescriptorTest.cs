@@ -179,6 +179,13 @@ public class TargetFrameworkDescriptorTest
         // Only EclipseLink reads # as the mark of a named parameter in native SQL (decision 211).
         Assert.Null(hibernateProfile.NativeSqlParameterDelimiterCall);
         Assert.Equal(".setHint(QueryHints.PARAMETER_DELIMITER, \"{0}\")", eclipseLinkProfile.NativeSqlParameterDelimiterCall);
+
+        // Both read a ? inside a bracketed name of native SQL, Hibernate four characters
+        // more; only Hibernate has an escape, so EclipseLink's query is refused (decision 217).
+        Assert.Equal("?:\\'\"", hibernateProfile.NativeSqlReadsInIdentifiers);
+        Assert.Equal('\\', hibernateProfile.NativeSqlIdentifierEscape);
+        Assert.Equal("?", eclipseLinkProfile.NativeSqlReadsInIdentifiers);
+        Assert.Null(eclipseLinkProfile.NativeSqlIdentifierEscape);
     }
 
     /// <summary>

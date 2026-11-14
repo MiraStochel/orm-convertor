@@ -148,6 +148,14 @@ public static class EclipseLinkDescriptor
         // does not hold every such text runs and the positional parameters still bind.
         NativeSqlParameterDelimiterCall: ".setHint(QueryHints.PARAMETER_DELIMITER, \"{0}\")",
 
+        // Measured against 5.0.0 (decision 217, eclipselink/NativeSqlReadingClaimsTest): a ?
+        // inside a bracketed identifier is read as a positional parameter, with the hint above
+        // and without it ("The index 1 is out of range"), and nothing escapes it - ?? and \?
+        // fail alike, and with the binding switched off NULL is written into the name. A
+        // colon, a backslash, an apostrophe and a quote are text there. No escape, so the
+        // builder refuses such a query.
+        NativeSqlReadsInIdentifiers: "?",
+
         // Measured the same way: the inner entity joins stand in the list of tables after every
         // outer join ("FROM Message t2 LEFT OUTER JOIN Person_knows_Person t3 ON (... t0 ...),
         // Person t1, Message t0"), so the on of an outer join naming an inner join's alias is

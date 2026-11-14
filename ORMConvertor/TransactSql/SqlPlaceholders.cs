@@ -9,7 +9,7 @@ namespace TransactSql;
 /// <c>:name</c> of NHibernate's native query, the <c>?1</c> of JPA's, the interpolation hole
 /// of EF Core's. One routine for all of them, because what has to be got right is the same
 /// everywhere - a placeholder is a name the method declares, never an <c>@</c> inside a
-/// string literal and never a name the query does not bind.
+/// string literal or a delimited name and never a name the query does not bind.
 /// </summary>
 public static class SqlPlaceholders
 {
@@ -31,6 +31,16 @@ public static class SqlPlaceholders
         for (var i = 0; i < sql.Length; i++)
         {
             var character = sql[i];
+
+            // A delimited name is a name whatever it holds: its apostrophe opens no literal
+            // and its @ is no placeholder.
+            if (!insideLiteral && character == '[')
+            {
+                var past = SqlNames.EndOfDelimited(sql, i);
+                substituted.Append(sql, i, past - i);
+                i = past - 1;
+                continue;
+            }
 
             if (character == '\'')
             {

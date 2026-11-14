@@ -25,6 +25,17 @@ namespace NHibernateWrappers;
 /// </summary>
 public sealed class NHibernateNativeSqlQueryBuilder : AbstractSqlQueryBuilder
 {
+    /// <summary>
+    /// The characters NHibernate 5.7.0 reads as its own inside a bracketed name of a native
+    /// query (decision 217, measured by <c>NHibernate/NHibernateNativeSqlReadingTest</c>): its
+    /// reading of the text does not know the square brackets of T-SQL, so there a colon opens
+    /// a named parameter - whatever follows it, an empty name included -, a ? is a positional
+    /// one, and an apostrophe opens a literal in which a parameter after it is not found. A
+    /// backslash and a doubled ? change nothing, so there is no escape and the builder refuses
+    /// such a query. A quote, a backslash and a brace are text there.
+    /// </summary>
+    private const string ReadInBracketedNames = "?:'";
+
     public override TargetFrameworkDescriptor Descriptor => NHibernateDescriptor.Instance;
 
     protected override List<ConversionSource> Emit(string sql, string? resultEntity)
@@ -38,8 +49,14 @@ public sealed class NHibernateNativeSqlQueryBuilder : AbstractSqlQueryBuilder
             ? $"\n        .AddEntity(typeof({resultEntity}))"
             : Scalars();
 
-        var text = SqlPlaceholders.Respell(sql, Parameters, p =>
+        var respelled = SqlPlaceholders.Respell(sql, Parameters, p =>
             p.IsCollection ? $"(:{QueryParameterNaming.IdentifierFor(p)})" : $":{QueryParameterNaming.IdentifierFor(p)}");
+
+        if (SpellBracketedNamesFor(respelled, ReadInBracketedNames, null) is not { } text)
+        {
+            return [];
+        }
+
         var indented = string.Join("\n", text.Split('\n').Select(line => "        " + line));
 
         var binding = string.Concat(Parameters.Select(p =>

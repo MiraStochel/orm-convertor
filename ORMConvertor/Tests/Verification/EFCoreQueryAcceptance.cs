@@ -53,7 +53,7 @@ internal static class EFCoreQueryAcceptance
     /// the query follow it (decision 083), so the count is not fixed - only the first
     /// parameter is. AdvisorBenchmarking looks for the same shape, except that it still
     /// insists on exactly one parameter and therefore does not find a parameterized query;
-    /// that is an open item, not a rule of the artifact.
+    /// that is a limit of the Advisor, not a rule of the artifact.
     /// </summary>
     private static MethodInfo FindQueryMethod(Assembly assembly)
         => assembly.GetTypes()
