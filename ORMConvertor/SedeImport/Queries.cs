@@ -33,6 +33,9 @@ public sealed record CatalogQuery(
     string Set,
     string Title,
     string Description,
+    string Created,
+    string Licence,
+    string Source,
     IReadOnlyList<CatalogParameter> Parameters,
     IReadOnlyList<string> Tables,
     IReadOnlyList<string> Columns,
@@ -42,7 +45,7 @@ public sealed record CatalogQuery(
     string Translation,
     string Note);
 
-public sealed record Catalog(string GeneratedBy, IReadOnlyList<CatalogQuery> Queries);
+public sealed record Catalog(string GeneratedBy, string Licence, IReadOnlyList<CatalogQuery> Queries);
 
 /// <summary>
 /// The catalog of the human-reviewed queries of SEDE (decision 208): every query of the
@@ -117,6 +120,7 @@ public static class Queries
             }
 
             var key = $"s{entry.QuerySetId}";
+            var created = Origin.CreatedOf(entry, key);
             var sedeSql = entry.QueryBody.Replace("\r", string.Empty).Trim();
             var sql = Placeholders.Convert(sedeSql, out var placeholders, key, log);
             var parameters = placeholders.Select(placeholder => Parameter(placeholder, fallbacks)).ToList();
@@ -222,6 +226,9 @@ public static class Queries
                 entry.Set,
                 Whitespace.Replace(entry.Title ?? string.Empty, " ").Trim(),
                 Whitespace.Replace(entry.Description ?? string.Empty, " ").Trim(),
+                created.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Origin.LicenceOf(created),
+                Origin.SourceOf(entry.QuerySetId),
                 parameters,
                 tables,
                 columns,
@@ -244,6 +251,7 @@ public static class Queries
 
         return new Catalog(
             $"SedeImport over {origin}, types {(schema.TypesFromListing ? "from the listing of the SEDE catalog" : "provisional from tables_so.json")}, statuses checked against {checkedAgainst}. Generated: change the tool and run it again rather than this file.",
+            Origin.Licence,
             queries);
     }
 

@@ -41,7 +41,8 @@ public sealed record SedeParameter(string Name, string SqlType, string Value);
 /// <summary>
 /// One of the human-reviewed queries of SEDE (decision 208), as <c>SampleData/Sede/queries.json</c>
 /// carries it: its number in SEDE, the part of the set, the title and the description its
-/// author wrote, its parameters with their values, the tables it reads, the columns of its
+/// author wrote, the day it was created, the version of CC BY-SA its author's content stands
+/// under by that day and its address in the Data Explorer, its parameters with their values, the tables it reads, the columns of its
 /// result in their order and the ordering key the run compares its rows by (decision 170:
 /// the columns its ordering falls on, in its order; empty for a query without one), its text
 /// in T-SQL as the author wrote it with the placeholders turned into parameters, the author's
@@ -53,6 +54,9 @@ public sealed record SedeQuery(
     SedeSet Set,
     string Title,
     string Description,
+    DateOnly Created,
+    string Licence,
+    string Source,
     IReadOnlyList<SedeParameter> Parameters,
     IReadOnlyList<string> Tables,
     IReadOnlyList<string> Columns,

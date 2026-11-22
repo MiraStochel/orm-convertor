@@ -94,10 +94,10 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         // The table name is written even where the source stated none (decision 076); the
         // value is then the JPA default, which is a convention of the target (decision 010).
-        var table = entityMap.Table;
-        if (table is null)
+        // A reserved word of T-SQL is delimited, which neither implementation does by itself.
+        var table = JpaDatabaseNames.Written(entityMap.Table ?? entityMap.Entity.Name);
+        if (entityMap.Table is null)
         {
-            table = entityMap.Entity.Name;
             Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Convention,
@@ -255,7 +255,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             }
 
             Import($"{Jakarta}.UniqueConstraint");
-            var columns = string.Join(", ", columnNames.Select(c => $"\"{c}\""));
+            var columns = string.Join(", ", columnNames.Select(c => $"\"{JpaDatabaseNames.Written(c)}\""));
             var named = constraint.Name is null ? string.Empty : $"name = \"{constraint.Name}\", ";
             rendered.Add($"@UniqueConstraint({named}columnNames = {{ {columns} }})");
         }
@@ -638,7 +638,11 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
     private static string RenderJoinColumn(string name, string referenced, bool? nullable, bool unique, bool readOnly)
     {
-        var arguments = new List<string> { $"name = \"{name}\"", $"referencedColumnName = \"{referenced}\"" };
+        var arguments = new List<string>
+        {
+            $"name = \"{JpaDatabaseNames.Written(name)}\"",
+            $"referencedColumnName = \"{JpaDatabaseNames.Written(referenced)}\"",
+        };
 
         if (nullable is { } n)
         {
@@ -813,7 +817,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         var arguments = new List<string>();
         if (facts?.Table is not null)
         {
-            arguments.Add($"name = \"{facts.Table}\"");
+            arguments.Add($"name = \"{JpaDatabaseNames.Written(facts.Table)}\"");
         }
 
         if (facts?.Schema is not null)
@@ -823,12 +827,12 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         if (own is not null)
         {
-            arguments.Add($"joinColumns = {{ {string.Join(", ", own.Select(c => $"@JoinColumn(name = \"{c}\")"))} }}");
+            arguments.Add($"joinColumns = {{ {string.Join(", ", own.Select(c => $"@JoinColumn(name = \"{JpaDatabaseNames.Written(c)}\")"))} }}");
         }
 
         if (facts?.TargetColumns is not null)
         {
-            arguments.Add($"inverseJoinColumns = {{ {string.Join(", ", facts.TargetColumns.Select(c => $"@JoinColumn(name = \"{c}\")"))} }}");
+            arguments.Add($"inverseJoinColumns = {{ {string.Join(", ", facts.TargetColumns.Select(c => $"@JoinColumn(name = \"{JpaDatabaseNames.Written(c)}\")"))} }}");
         }
 
         var joinTable = $"@JoinTable({string.Join(", ", arguments)})";
@@ -1222,7 +1226,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         Import($"{Jakarta}.Column");
 
         var property = propertyMap.Property.Name;
-        var arguments = new List<string> { $"name = \"{ColumnOf(propertyMap)}\"" };
+        var arguments = new List<string> { $"name = \"{JpaDatabaseNames.Written(ColumnOf(propertyMap))}\"" };
 
         // Which argument renders which fact, so that each is marked at its own argument of
         // the one annotation (decision 125).

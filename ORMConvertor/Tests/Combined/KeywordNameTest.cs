@@ -384,6 +384,134 @@ public class KeywordNameTest
         Assert.Contains("[User]", sql);
     }
 
+    /// <summary>
+    /// The same table in the annotations of a JPA target: written bare, the SQL Hibernate 7.4.5
+    /// and EclipseLink 5.0.0 generate over it is refused by the server, and neither quotes a
+    /// keyword by itself (JavaTests hibernate/ReservedSqlNameClaimsTest and
+    /// eclipselink/ReservedSqlNameClaimsTest). As the specification's delimited identifier it
+    /// is delimited by both in every statement; Hibernate's backticks EclipseLink would not read.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void TheUserTableOfCofoundryIsADelimitedIdentifierInTheAnnotations(ORMEnum target)
+    {
+        var example = Examples.GetExamples.Single(e => e.Key == "cofoundry-pages");
+        var result = ConversionHandler.Convert(example.SourceOrm, target, example.Units);
+
+        var entities = result.Sources.Where(s => s.ContentType == ConversionContentType.JavaEntity).Select(s => s.Content).ToList();
+        Assert.Contains(entities, e => e.Contains("@Table(name = \"\\\"User\\\"\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(entities, e => e.Contains("@Table(name = \"User\"", StringComparison.Ordinal));
+    }
+
+    private static readonly ConversionSource[] ReservedNamesInAMapping =
+    [
+        new()
+        {
+            ContentType = ConversionContentType.CSharp,
+            Content = """
+                namespace Shop;
+
+                public class User
+                {
+                    public virtual int Key { get; set; }
+                    public virtual string Login { get; set; }
+                }
+
+                public class Rule
+                {
+                    public virtual int RuleId { get; set; }
+                    public virtual User Owner { get; set; }
+                }
+                """,
+        },
+        new()
+        {
+            ContentType = ConversionContentType.XML,
+            Content = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop" assembly="Shop">
+                  <class name="User" table="`User`">
+                    <id name="Key" column="`Key`" />
+                    <property name="Login" column="Login" />
+                  </class>
+                  <class name="Rule" table="`Rule`">
+                    <id name="RuleId" column="RuleId" />
+                    <many-to-one name="Owner" class="User" column="`Order`" />
+                  </class>
+                </hibernate-mapping>
+                """,
+        },
+    ];
+
+    /// <summary>
+    /// A table, a column, a join column and the column it references, each spelled like a
+    /// reserved word of T-SQL, are delimited identifiers in the annotations, and every other
+    /// name stays bare. The artifact reads back: the delimiters are no part of the name, so
+    /// the mapping NHibernate gets from it backticks the same names again.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void AReservedTableOrColumnIsADelimitedIdentifierInTheAnnotationsAndReadsBack(ORMEnum target)
+    {
+        var result = ConversionHandler.Convert(ORMEnum.NHibernate, target, [.. ReservedNamesInAMapping]);
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
+
+        var entities = result.Sources.Where(s => s.ContentType == ConversionContentType.JavaEntity).ToList();
+        var user = Assert.Single(entities, s => s.Content.Contains("class User", StringComparison.Ordinal)).Content;
+        var rule = Assert.Single(entities, s => s.Content.Contains("class Rule", StringComparison.Ordinal)).Content;
+
+        Assert.Contains("@Table(name = \"\\\"User\\\"\")", user, StringComparison.Ordinal);
+        Assert.Contains("@Column(name = \"\\\"Key\\\"\")", user, StringComparison.Ordinal);
+        Assert.Contains("@Column(name = \"Login\"", user, StringComparison.Ordinal);
+        Assert.Contains("@Table(name = \"\\\"Rule\\\"\")", rule, StringComparison.Ordinal);
+        Assert.Contains("@Column(name = \"RuleId\")", rule, StringComparison.Ordinal);
+        Assert.Contains("@JoinColumn(name = \"\\\"Order\\\"\", referencedColumnName = \"\\\"Key\\\"\"", rule, StringComparison.Ordinal);
+
+        var back = ConversionHandler.Convert(target, ORMEnum.NHibernate,
+            [.. entities.Select(e => new ConversionSource { Content = e.Content, ContentType = ConversionContentType.Java })]);
+        var mappings = string.Join("\n", back.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content));
+
+        Assert.Contains("table=\"`User`\"", mappings, StringComparison.Ordinal);
+        Assert.Contains("table=\"`Rule`\"", mappings, StringComparison.Ordinal);
+        Assert.Contains("`Key`", mappings, StringComparison.Ordinal);
+        Assert.Contains("`Order`", mappings, StringComparison.Ordinal);
+        Assert.DoesNotContain("&quot;", mappings, StringComparison.Ordinal);
+    }
+
+    /// <summary>Hibernate's own backticks in a source are a delimiter as well, not a part of the name.</summary>
+    [Fact]
+    public void ABacktickedNameOfAHibernateSourceReadsBackBare()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.Hibernate, ORMEnum.Dapper,
+        [
+            Java("""
+                package Shop;
+
+                import jakarta.persistence.*;
+
+                @Entity
+                @Table(name = "`User`")
+                public class User {
+                    @Id
+                    @Column(name = "`Key`")
+                    private Integer id;
+
+                    @Column(name = "Login")
+                    private String login;
+                }
+                """),
+            Jpql("select u.id, u.login from User u where u.login = :login"),
+        ]);
+
+        var sql = Text(result, ConversionContentType.SqlQuery);
+        Assert.Contains("[User]", sql, StringComparison.Ordinal);
+        Assert.Contains("[Key]", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"", sql, StringComparison.Ordinal);
+    }
+
     /// <summary>A backticked table or column of a mapping reads back as the bare name, which the SQL target brackets by its own rule.</summary>
     [Fact]
     public void ABacktickedNameOfAMappingReadsBackBare()

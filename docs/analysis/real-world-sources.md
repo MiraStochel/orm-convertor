@@ -21,7 +21,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 |---|---|---|
 | **PD** | `@Query` Spring Data vytáhnout do `em.createQuery("…")` | anotace doplňkového balíčku nad frameworkem, kterou nástroj nečte (rozh. [133](../decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)); pojmenovaný dotaz JPA (`@NamedQuery`, `<named-query>`) se čte tam, kde stojí (rozh. [143](../decisions/143-a-named-query-of-jpa-is-read-where-it-is-defined.md)), a úpravu nepotřebuje |
 | **ZP** | vypustit zápis (`<insert>`, `Execute`, Dapper.Contrib, `SaveChanges`, zápisový `@NamedQuery`) a kód, který slouží jen jemu | překládají se čtecí dotazy (rozh. [053](../decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md), [133](../decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)) |
-| **DS** | dynamické SQL MyBatisu (`<if>`, `<choose>`, `${}`) vypustit či rozepsat | zúžení Z F8 (subset 2.3, 2.4) |
+| **DS** | dynamické SQL MyBatisu (`<if>`, `<choose>`, `${}`) vypustit či rozepsat | vyslovená mez F8 (subset 2.3, 2.4) |
 | **CE** | srovnání s celou entitou (`m.user = :user`) na srovnání klíče | parametr entitou model nenese (subset 2.6) |
 | **CP** | cesta přes asociaci v podmínce (`c.user.id = :id`) na korelované `exists` | úprava zrušená: cestu mimo `join` nástroj čte od rozh. [144](../decisions/144-a-path-through-an-association-outside-join-is-an-implicit-join-or-the-foreign-key-column.md) a projekci jedné strany joinu (`select r … join …`) od 2026-10-16, všechny přepisy se vrátily k textu projektu; zkratka zůstává, protože ji jmenují starší záznamy |
 | **DD** | dědičnost a `@MappedSuperclass`: sloupce předka přenést do entity | VO 2 (subset 2.1) |

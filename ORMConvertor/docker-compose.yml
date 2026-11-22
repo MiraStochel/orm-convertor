@@ -104,9 +104,9 @@ services:
   # 117) - at scale factor 0.1 here, loaded in seconds; LDBC_TEST_SCALE_FACTOR picks another
   # one LDBC publishes a validation set for (0.1 to 10). The FIBEN benchmark and the SEDE data
   # stay out: their catalogs run on demand against mssql_db, never as part of a build
-  # (decisions 149 and 208). So does the sample database, which no suite reads - what is left
-  # is the data the project holds a copy of, so the profile is built without a publisher's
-  # address (decision 218).
+  # (decisions 149 and 208). So does the sample database, which no suite reads (decision 218) -
+  # what is left is the LDBC data of scale factor 0.1, which the build takes from LDBC and
+  # checks against the checksum the repository carries (decision 219).
   test_db:
     profiles: ["test"]
     build:

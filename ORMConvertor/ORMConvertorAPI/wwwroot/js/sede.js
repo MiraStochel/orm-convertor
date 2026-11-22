@@ -146,6 +146,15 @@ function renderQuery(catalog, query) {
   if (query.description) {
     facts.append(fact("Described as: ", `“${query.description}”`));
   }
+  // The title, the description and the text are their author's, under the version of
+  // CC BY-SA of the day the query was created; the address names the author.
+  const source = document.createElement("a");
+  source.href = query.source;
+  source.textContent = `query ${query.querySetId} of the Stack Exchange Data Explorer`;
+  const licence = document.createElement("a");
+  licence.href = `https://creativecommons.org/licenses/by-sa/${query.licence.split(" ").pop()}/`;
+  licence.textContent = query.licence;
+  facts.append(fact("Source: ", source, `, created ${query.created}, `, licence));
   if (query.parameters.length > 0) {
     const item = fact("Parameters: ");
     query.parameters.forEach((parameter, index) => {

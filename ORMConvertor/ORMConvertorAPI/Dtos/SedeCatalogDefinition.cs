@@ -18,8 +18,9 @@ public record SedeCatalogDefinition(
 
 /// <summary>
 /// One query of the set: its number in SEDE, the part of the set and how much of it the tool
-/// translates as numbers of their enums, the title and the description its author wrote, its
-/// parameters with the values the run binds, the tables it reads (which are the names of its
+/// translates as numbers of their enums, the title and the description its author wrote, the
+/// day it was created, the version of CC BY-SA its author's content stands under and its
+/// address in the Data Explorer, its parameters with the values the run binds, the tables it reads (which are the names of its
 /// entity units without the extension), the columns of its result, whether it orders its rows
 /// and the ordering key the Java suite's run compares rows by (decision 170), its text in
 /// T-SQL with the placeholders as parameters, the author's text with the placeholders of SEDE,
@@ -31,6 +32,9 @@ public record SedeQueryDefinition(
     SedeSet Set,
     string Title,
     string Description,
+    DateOnly Created,
+    string Licence,
+    string Source,
     List<SedeParameterDefinition> Parameters,
     List<string> Tables,
     List<string> Columns,

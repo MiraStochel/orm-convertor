@@ -81,6 +81,32 @@ public class SedeCatalogTest
     }
 
     /// <summary>
+    /// Every query states where it comes from and under which licence its author's content
+    /// stands: the day it was created, the version of CC BY-SA that day falls under on Stack
+    /// Exchange (2.5 before 2011-04-08, 3.0 before 2018-05-02, 4.0 from then on) and its
+    /// address in the Data Explorer, which ends in its number. The day is the one the Data
+    /// Explorer shows, in UTC: the set states the moment four or five hours later, and the two
+    /// queries compared with their pages on 2026-11-22 hold the import to taking that back -
+    /// s1233, created 2010-05-27 16:08:16Z, and s15605, created 2010-12-02 19:10:46Z, which
+    /// the set dates a day later.
+    /// </summary>
+    [Fact]
+    public void EveryQueryStatesItsOriginAndItsLicence()
+    {
+        Assert.Equal(new DateOnly(2010, 5, 27), SedeSample.Queries.Single(query => query.Key == "s1233").Created);
+        Assert.Equal(new DateOnly(2010, 12, 2), SedeSample.Queries.Single(query => query.Key == "s15605").Created);
+
+        Assert.All(SedeSample.Queries, query =>
+        {
+            var licence = query.Created < new DateOnly(2011, 4, 8) ? "CC BY-SA 2.5"
+                : query.Created < new DateOnly(2018, 5, 2) ? "CC BY-SA 3.0"
+                : "CC BY-SA 4.0";
+            Assert.Equal(licence, query.Licence);
+            Assert.Equal($"https://data.stackexchange.com/stackoverflow/query/{query.QuerySetId}", query.Source);
+        });
+    }
+
+    /// <summary>
     /// The ordering key of every query the tool reads is the ordering of its text (decision 170):
     /// the columns the keys of the outermost ordering fall on, in their order, every column where
     /// a key falls on none, nothing where the text does not order. The import derives the key

@@ -7,15 +7,17 @@ namespace JakartaPersistence;
 /// from orm.xml (decision 077). Both readers fill this one shape and one writer carries
 /// it into the builder, so the two spellings of a fact cannot end in two different calls.
 /// The facts are what the source stated, nothing more: an absent default of the
-/// implementation is not filled in here (decision 067).
+/// implementation is not filled in here (decision 067). The name of a table, a schema or a
+/// column is the name itself: the delimiters a source spelled it with are not part of it
+/// (<see cref="JpaDatabaseNames"/>), whichever reader saw them.
 /// </summary>
 public sealed class JpaEntityFacts
 {
     public required string ClassName { get; init; }
 
-    public string? Table { get; set; }
+    public string? Table { get; set => field = JpaDatabaseNames.Bare(value); }
 
-    public string? Schema { get; set; }
+    public string? Schema { get; set => field = JpaDatabaseNames.Bare(value); }
 
     public List<JpaUniqueConstraintFacts> UniqueConstraints { get; } = [];
 
@@ -76,7 +78,7 @@ public sealed class JpaAttributeFacts
     /// <summary>The written type of the attribute where the reader knows it; the fallback target of a relation.</summary>
     public string? TypeText { get; set; }
 
-    public string? ColumnName { get; set; }
+    public string? ColumnName { get; set => field = JpaDatabaseNames.Bare(value); }
 
     public int? Length { get; set; }
 
@@ -175,7 +177,10 @@ public sealed class JpaAttributeFacts
     public Dictionary<string, TextRange> Positions { get; } = new(StringComparer.Ordinal);
 }
 
-public sealed record JpaUniqueConstraintFacts(string? Name, IReadOnlyList<string> ColumnNames);
+public sealed record JpaUniqueConstraintFacts(string? Name, IReadOnlyList<string> ColumnNames)
+{
+    public IReadOnlyList<string> ColumnNames { get; init; } = [.. ColumnNames.Select(JpaDatabaseNames.Bare).OfType<string>()];
+}
 
 /// <summary>A @SequenceGenerator or @TableGenerator, whichever elements the source stated.</summary>
 public sealed record JpaGeneratorFacts(
@@ -208,10 +213,20 @@ public sealed record JpaJoinColumnFacts(
     bool? Nullable,
     bool Unique,
     IReadOnlyList<string> Unread,
-    IReadOnlyList<string> ReadOnlyFlags);
+    IReadOnlyList<string> ReadOnlyFlags)
+{
+    public string? Name { get; init; } = JpaDatabaseNames.Bare(Name);
+
+    public string? ReferencedColumnName { get; init; } = JpaDatabaseNames.Bare(ReferencedColumnName);
+}
 
 public sealed record JpaJoinTableFacts(
     string? Name,
     string? Schema,
     IReadOnlyList<JpaJoinColumnFacts> JoinColumns,
-    IReadOnlyList<JpaJoinColumnFacts> InverseJoinColumns);
+    IReadOnlyList<JpaJoinColumnFacts> InverseJoinColumns)
+{
+    public string? Name { get; init; } = JpaDatabaseNames.Bare(Name);
+
+    public string? Schema { get; init; } = JpaDatabaseNames.Bare(Schema);
+}

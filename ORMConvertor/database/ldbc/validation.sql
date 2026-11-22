@@ -10,8 +10,9 @@
 -- "parameters|result", both JSON objects keyed by the field names of the driver. A line does
 -- not name its operation; the fields do, and the CASE below reads the operation off the one
 -- field only it has. An insert's result is the string "-1". Dates and moments are numbers
--- of milliseconds since the epoch, in UTC. The set is used as a test oracle under CC BY 4.0;
--- running it is not an LDBC Benchmark and nothing measured by it is an LDBC Benchmark result.
+-- of milliseconds since the epoch, in UTC. The set is LDBC's, downloaded from LDBC by the build
+-- and used as a test oracle; the repository carries no copy. Running it is not an LDBC
+-- Benchmark and nothing measured by it is an LDBC Benchmark result.
 --
 -- Position is the line number, and the order of the lines is the whole point: a read's
 -- expected result holds in the state after every insert above it. The lines are numbered by

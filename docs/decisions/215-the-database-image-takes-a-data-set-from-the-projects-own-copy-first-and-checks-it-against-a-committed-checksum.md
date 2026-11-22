@@ -1,7 +1,7 @@
 # 215 — Databázový obraz bere datovou sadu nejdřív z vlastní kopie projektu, potom od vydavatele, a soubor, jehož jméno zná seznam součtů v repozitáři, se s ním musí shodnout
 
 Datum: 2026-11-11
-Stav: platí; důsledek o kopiích zbylých sad nahrazuje 218
+Stav: platí; důsledek o kopiích zbylých sad nahrazuje 218, kopii dat LDBC a pořadí adres pro ně nahrazuje 219
 Požadavky: S5, T1
 Podklad: rozhodnutí [110](110-ldbc-snb-as-a-second-reference-domain.md), [117](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md), [149](149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md), [186](186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md) a [208](208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md); vydání `data_sets` repozitáře projektu
 

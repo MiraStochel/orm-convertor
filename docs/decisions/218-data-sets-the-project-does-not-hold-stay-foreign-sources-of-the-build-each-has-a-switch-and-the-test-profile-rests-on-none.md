@@ -1,7 +1,7 @@
 # 218 — Datové sady, které projekt nedrží, zůstávají cizími zdroji sestavení: každou lze vynechat přepínačem, profil `test` na žádné nestojí a cizí zdroje sestavení jsou vypsané na jednom místě
 
 Datum: 2026-11-14
-Stav: platí; nahrazuje důsledek rozh. 215 o kopiích zbylých sad
+Stav: platí; nahrazuje důsledek rozh. 215 o kopiích zbylých sad; co projekt drží a na čem stojí profil `test`, nahrazuje 219
 Požadavky: S5
 Podklad: rozhodnutí [039](039-container-configuration-of-the-environment.md), [186](186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md) a [215](215-the-database-image-takes-a-data-set-from-the-projects-own-copy-first-and-checks-it-against-a-committed-checksum.md); `database.Dockerfile`, `docker-compose.yml`
 

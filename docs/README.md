@@ -21,6 +21,7 @@ Autoritativní popis projektu, **členěný podle žánru, ne podle času** (roz
 | [`baseline.md`](baseline.md) | Stav **při převzetí**. | zmražené |
 | [`zamer.tex`](zamer.tex) ([PDF](zamer.pdf)) | Schválený **záměr projektu**: úkoly řešitele, očekávané výsledky, harmonogram. | zmražené |
 | [`specifikace.tex`](specifikace.tex) ([PDF](specifikace.pdf)) | Schválená **specifikace**: požadavky, milníky 1–5, harmonogram. | zmražené |
+| [`report/report.tex`](report/report.tex) ([PDF](report/report.pdf)) | **Zpráva o projektu** k vydání `2.4.1`: jak se nástroj nasazuje a používá, co a jak překládá a kde má meze, co se ukázalo při vývoji a co změřily experimenty; snímky obrazovek v [`report/obrazky/`](report/obrazky/). | váže se k vydání, další vývoj nesleduje |
 
 Scénář → požadavek → důkaz drží `use-cases.md`, `requirements.md` a `traceability.md`, vedle nich model kvality jako pohled z normy. Nárok verze má dvě patra a při rozporu platí vyšší: `traceability.md` ustoupí §9 a §9 ustoupí sekci *Guarantees* kořenového [`README.md`](../README.md).
 

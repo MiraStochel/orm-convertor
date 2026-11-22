@@ -66,12 +66,19 @@
       (M.&nbsp;Hazoom, V.&nbsp;Malik, B.&nbsp;Bogin, <cite>Text-to-SQL in the Wild: A
       Naturally-Occurring Dataset Based on Stack Exchange Data</cite>, NLP4Prog 2021),
       published under the <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License
-      2.0</a> at <a href="https://github.com/hirupert/sede">github.com/hirupert/sede</a>. The
-      data are the public data dump of dba.stackexchange.com of 2024-04-06, as Stack Exchange
-      uploaded it to the <a href="https://archive.org/details/stackexchange">archive.org item
-      <code>stackexchange</code></a>, under
-      <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>, content by
-      the users of the site. Nothing run here is a run of SEDE or a text-to-SQL task: the
+      2.0</a> at <a href="https://github.com/hirupert/sede">github.com/hirupert/sede</a>. That
+      licence covers the selection: the title, the description and the text of a query are
+      content of the user of the
+      <a href="https://data.stackexchange.com/">Stack Exchange Data Explorer</a> who wrote it,
+      under <a href="https://creativecommons.org/licenses/">CC BY-SA</a> in the version of the
+      day it was created (2.5 before 2011-04-08, 3.0 before 2018-05-02, 4.0 from then on), and
+      every query below states that version and links to its source, where its author is
+      named. The data are the public data dump of dba.stackexchange.com that Stack Exchange
+      published as the dump of 2024-04-02 and uploaded to the
+      <a href="https://archive.org/details/stackexchange">archive.org item
+      <code>stackexchange</code></a>, where the file of the site is dated 2024-04-06, the date
+      in the name of the data set; content by the users of the site under CC BY-SA in
+      the version of the day of each contribution. Nothing run here is a run of SEDE or a text-to-SQL task: the
       queries are the authors' own T-SQL with the placeholders of the Data Explorer turned into
       parameters, and the title beside each one is its intent, for the reader and for the
       comparison with language models.
@@ -264,7 +271,7 @@
   </main>
 
   <footer>
-    <p>ORMConvertor &mdash; a research prototype. SEDE under Apache-2.0, the data of dba.stackexchange.com under CC BY-SA 4.0; not a run of SEDE.</p>
+    <p>ORMConvertor &mdash; a research prototype. The SEDE set under Apache-2.0, the queries and the data of dba.stackexchange.com content of Stack Exchange users under CC BY-SA; not a run of SEDE.</p>
   </footer>
 
   <template id="query-template">

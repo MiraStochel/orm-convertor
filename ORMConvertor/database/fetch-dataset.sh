@@ -3,10 +3,10 @@
 #
 #   fetch-dataset.sh <target file> <address>...
 #
-# The addresses are tried in order - the project's own copy first, the publisher's after it -
-# and the first one that answers is kept. A file whose name datasets.sha256 lists must match
-# the checksum there, whichever address served it, so a replaced archive is a failed build
-# and not another data set under the same name.
+# The addresses are tried in order - the project's own copy first where the caller names
+# one, the publisher's after it - and the first one that answers is kept. A file whose name
+# datasets.sha256 lists must match the checksum there, whichever address served it, so a
+# replaced archive is a failed build and not another data set under the same name.
 #
 # Exit code 1: no address has the file (the caller may have another way to get it).
 # Exit code 2: the file came and its checksum differs.

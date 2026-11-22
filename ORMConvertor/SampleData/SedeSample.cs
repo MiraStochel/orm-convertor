@@ -19,8 +19,12 @@ namespace SampleData;
 /// catalog, and with the Sede database as the catalog it comes from the very tables the dump
 /// was loaded into.
 ///
-/// SEDE (M. Hazoom, V. Malik, B. Bogin, NLP4Prog 2021) is published under Apache-2.0; the data
-/// are the dump of dba.stackexchange.com under CC BY-SA 4.0. This is not a run of SEDE and not
+/// SEDE (M. Hazoom, V. Malik, B. Bogin, NLP4Prog 2021) is published under Apache-2.0, which
+/// covers the selection of the queries; the title, the description and the text of a query are
+/// content of a user of the Stack Exchange Data Explorer under CC BY-SA, in the version of the
+/// day it was created, and every query states that version and its address there. The data
+/// are the dump of dba.stackexchange.com, content of the users of that site under CC BY-SA in
+/// the version of the day of each contribution. This is not a run of SEDE and not
 /// text-to-SQL: the tool does not query in natural language; the title stands beside each
 /// query as its intent, for the reader and for the comparison with language models (T4, T5).
 /// </summary>
@@ -28,8 +32,8 @@ public static class SedeSample
 {
     /// <summary>
     /// The data set the texts are run over, named as the loader records it in the extended
-    /// property <c>sede.dataset</c> of the Sede database: the site and the date of the dump the
-    /// image downloads.
+    /// property <c>sede.dataset</c> of the Sede database: the site and the date of its file in
+    /// the archive.org item the image downloads it from, which labels the dump 2024-04-02.
     /// </summary>
     public const string DataSet = "dba.stackexchange.com-2024-04-06";
 
@@ -86,5 +90,5 @@ public static class SedeSample
         return reader.ReadToEnd();
     }
 
-    private sealed record CatalogDocument(string GeneratedBy, List<SedeQuery> Queries);
+    private sealed record CatalogDocument(string GeneratedBy, string Licence, List<SedeQuery> Queries);
 }
