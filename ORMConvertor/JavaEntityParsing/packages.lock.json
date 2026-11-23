@@ -18,15 +18,15 @@
       "abstractwrappers": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.4.1, )",
-          "Model": "[2.4.1, )"
+          "Common": "[2.4.2, )",
+          "Model": "[2.4.2, )"
         }
       },
       "common": {
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.4.1, )"
+          "Model": "[2.4.2, )"
         }
       },
       "model": {

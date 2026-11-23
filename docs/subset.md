@@ -444,7 +444,7 @@ Pod 2.4–2.11 stojí jedno pravidlo ([053], [065], [070]): **nepřečtená či 
 
 Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhodnutí ticho neobhajuje, proto je vede [`open-items.md`](./open-items.md) jako práci.
 
-Známé není žádné.
+Známé je jedno, a fakt v něm nemizí — mlčí artefakt: jméno schématu, sekvence a tabulky čítače s jejími sloupci, které T-SQL čte jako klíčové slovo, jde do anotací JPA a do mapování NHibernatu holé a bez záznamu, na rozdíl od jména tabulky a sloupce (řádek o jménech v §2.8), a příkaz nad ním může odmítnout až server. Vede ho položka [Jméno schématu a jména generátoru klíče jdou do mapování neoddělená](./open-items.md#jméno-schématu-a-jména-generátoru-klíče-jdou-do-mapování-neoddělená).
 
 ---
 

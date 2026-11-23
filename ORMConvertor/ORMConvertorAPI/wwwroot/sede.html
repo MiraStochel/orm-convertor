@@ -109,7 +109,7 @@
         tags of the questions as SEDE derives it, the type tables are filled from the
         documentation, and the tables the dump does not carry &mdash; review tasks, suggested
         edits, pending flags, post notices &mdash; stay empty. The data set is named
-        <code class="sede-data-set"></code> after the site and the date of the dump.
+        <code class="sede-data-set"></code> after the site and the date of its file in the archive.org item.
       </p>
       <p>
         The site is dba.stackexchange.com for three reasons: its archive fits a SQL Server
@@ -138,7 +138,7 @@
       <p>
         From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
         starts the application and a SQL Server with four databases. The archive of the dump
-        (305&nbsp;MB) is downloaded while the image is built and checked against the checksum
+        (319&nbsp;MB) is downloaded while the image is built and checked against the checksum
         the archive.org item publishes; the first start unpacks it table by table, turns the
         XML into CSV and loads it, which takes a few minutes while the server already answers.
         The volume keeps the data, so later starts skip the load. Connect with:
@@ -146,7 +146,7 @@
       <pre><code>Server=localhost,1444;Database=Sede;User ID=sa;Password=Testingorms123;TrustServerCertificate=true</code></pre>
       <p>
         <code>SEDE_DATASET=none docker compose up --build</code> leaves the data out of the
-        image; another site and date of the dump, with the address and the checksum of its
+        image; another site and date of its file, with the address and the checksum of its
         archive, selects another one.
       </p>
 

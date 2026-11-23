@@ -107,8 +107,8 @@
 
 \def\ResearchProject{Research project}
 
-% Odevzdávaný release: tag 2.4.1 ze 14. 11. 2026
-\def\Vydani{2.4.1}
+% Odevzdávaný release: tag 2.4.2 z 23. 11. 2026
+\def\Vydani{2.4.2}
 
 % METADATA SECTION START
 \def\StudentsFullName{Miroslav Štochel}
@@ -138,7 +138,7 @@
  \textbf{Supervisor:} & \SupervisorFullName \\
  \textbf{Consultants:} & \ConsultantsFullName \\[1em]
  \textbf{Repository:} & \url{https://github.com/MiraStochel/orm-convertor}, release \texttt{\Vydani} \\
- \textbf{Date:} & 22.~listopadu~2026 \\
+ \textbf{Date:} & 23.~listopadu~2026 \\
 \end{tabular}}
 
 \bigskip
@@ -278,7 +278,7 @@ Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}). Stav jednot
 
 Repozitář označuje tytéž stavy slovníkem svých záruk: \emph{nárokovaný}, \emph{nárokovaný v~užším rozsahu} a \emph{vyňatý} (\path{docs/architecture.md}, §9, a \path{docs/traceability.md}; anglicky kořenové \texttt{README.md}, \emph{Guarantees}). Pod \emph{vyňatý} tam spadají řádky \emph{připraveno} i \emph{nerealizováno} a první věta požadavku S4.
 
-Odevzdávaný release \texttt{\Vydani} (tag ze 14.~listopadu~2026) vznikl, protože build nad \texttt{2.4.0} v~čistém prostředí neprojde: repozitář FIBEN z~GitHubu zmizel a build proto bere jeho archiv z~vlastní kopie projektu (tab.~\ref{tab:sady}). Počty testů a záznamy běhů patří tagu \texttt{\Vydani} a starším stromům (tab.~\ref{tab:zaznamy-behu}); zdroje datových sad a časy buildu v~kap.~\ref{sec:nasazeni} odpovídají větvi \texttt{main} z~22.~listopadu~2026. Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
+Odevzdávaný release je \texttt{\Vydani} (tag z~23.~listopadu~2026) a zpráva popisuje jeho strom: nasazení v~kap.~\ref{sec:nasazeni}, příklady v~kap.~\ref{sec:pouziti} i počty testů (tab.~\ref{tab:cisla}). Předchozí release \texttt{2.4.1} ze 14.~listopadu vznikl, protože build nad \texttt{2.4.0} v~čistém prostředí neprojde: repozitář FIBEN z~GitHubu zmizel a build proto bere jeho archiv z~vlastní kopie projektu (tab.~\ref{tab:sady}); co po něm přidal release \texttt{\Vydani}, říká tab.~\ref{tab:vydani}. Záznamy běhů na vyžádání patří starším stromům (tab.~\ref{tab:zaznamy-behu}). Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
 
 \subsection{Struktura dokumentu}
 
@@ -378,7 +378,7 @@ Příkaz spustí dvě služby bez profilu (obr.~\ref{fig:nasazeni}): aplikaci na
 \node[hl, text width=27mm, minimum height=15mm, below=of tdb] (tapp) {\texttt{test\_app}, \texttt{\_ldbc},\\\texttt{\_cases}, \texttt{\_dry}\\čtyři instance nástroje};
 \draw[arr] (tests) -- (tdb);
 \draw[arr] (jt) -- node[lbl, below]{HTTP} (tapp);
-\draw[arr] (tapp) -- node[lbl, right]{katalog} (tdb);
+\draw[arr] (tapp) -- node[lbl, right]{katalog\\(ne \texttt{\_dry})} (tdb);
 \draw[arr] (jt.north east) -- node[lbl, above, sloped]{JDBC} (tdb.south west);
 \node[grp, fit=(tests)(tdb)(jt)(tapp), label={[lbl]above:profil \texttt{test}}] (tst) {};
 \end{tikzpicture}
@@ -504,7 +504,7 @@ srovnání s~LLM & protokol o~sedmi krocích (tab.~\ref{tab:protokol}) & \path{O
 
 Dlouhý běh se spouští odpojeně, pojmenovaně a bez \texttt{-{}-rm}; jeho soubory zůstávají mimo git a do repozitáře jde jen záznam. Běh, který měří čas, chce na hostiteli vypnuté dynamické navýšení frekvence procesoru a zajištění běhu počítače (pozastavené aktualizace Windows).
 
-Všechny běhy mají stejnou stavbu: proměnná zapne případ a adresář dostane soubory běhu. Běhy FIBEN a SEDE řídí proměnné \path{ORMCONVERTOR_FIBEN_*} a \path{ORMCONVERTOR_SEDE_*}: \texttt{\_RESULTS} jmenuje adresář běhu, \texttt{\_QUERIES} vybere dotazy pro kontrolu a \texttt{\_MEASURE=0} vypne měření času. U~soudce LDBC dává \path{ORMCONVERTOR_LDBC_VALIDATION_ROWS} prefix validační sady (prázdná hodnota celou sadu), u~běhu mezí vybírá \path{ORMCONVERTOR_SERIES_AXES} osy a \path{ORMCONVERTOR_SERIES_CATALOG=none} dává dry run. Kontrola z~hostitele se nezapisuje, záznam vzniká jen z~běhu v~zafixovaném prostředí; jedinou výjimkou je kontrola, která změnila vstupy experimentu (tab.~\ref{tab:nepovedlo}).
+Běhy mají stejnou stavbu: případ zapne proměnná, u~soudce LDBC a běhů katalogů connection string jejich databáze, a adresář běhu dostane jeho soubory. Běhy FIBEN a SEDE řídí proměnné \path{ORMCONVERTOR_FIBEN_*} a \path{ORMCONVERTOR_SEDE_*}: \texttt{\_RESULTS} jmenuje adresář běhu, \texttt{\_QUERIES} vybere dotazy pro kontrolu a \texttt{\_MEASURE=0} vypne měření času. U~soudce LDBC dává \path{ORMCONVERTOR_LDBC_VALIDATION_ROWS} prefix validační sady (prázdná hodnota celou sadu), u~běhu mezí vybírá \path{ORMCONVERTOR_SERIES_AXES} osy a \path{ORMCONVERTOR_SERIES_CATALOG=none} dává dry run. Kontrola z~hostitele se nezapisuje, záznam vzniká jen z~běhu v~zafixovaném prostředí; jedinou výjimkou je kontrola, která změnila vstupy experimentu (tab.~\ref{tab:nepovedlo}).
 
 \pagebreak
 
@@ -551,17 +551,17 @@ datová sada není k~dispozici & build image databáze skončí hláškou \emph{
 
 \subsection{První průchod aplikací}\label{sec:tutorial}
 
-Pro seznámení stačí jeden převod, který projde celý a bez chyby: příklad dodaný s~nástrojem, z~Dapperu do EF~Core (tab.~\ref{tab:pruchod}). Týž průchod nabízí nástroj sám na výukové stránce \emph{Tutorial} (obr.~\ref{fig:vyukova-stranka}); kdo nástroj otevírá poprvé, začne tam.
+Pro seznámení stačí jeden převod, který projde celý a bez chyby: příklad dodaný s~nástrojem, z~Dapperu do EF~Core (tab.~\ref{tab:pruchod}). Týž průchod nabízí nástroj sám na výukové stránce \emph{Tutorial} (obr.~\ref{fig:vyukova-stranka}).
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{2.4cm} L{5cm} Y}
+\begin{tabularx}{\textwidth}{L{2.5cm} L{4.6cm} Y}
 \toprule
 \textbf{Krok} & \textbf{Co uživatel udělá} & \textbf{Co uvidí} \\
 \midrule
 1. Otevřít & \url{http://localhost:5072/orm/}, \emph{Open the translator} & rozcestník (obr.~\ref{fig:rozcestnik}) a překladovou obrazovku \\
 2. Načíst příklad & \emph{Start from an example}: \emph{A source that states little (Dapper → EF Core, 3 files)}, \emph{Load example} & dvě holé třídy C\# bez atributů a jeden dotaz v~SQL (obr.~\ref{fig:priklad-nacteny}) \\
-3. Přeložit & \emph{Convert} & převod pod sekundu, otevře se \emph{Result} \\
+3. Přeložit & \emph{Convert} & převod za méně než sekundu, otevře se \emph{Result} \\
 4. Přečíst výsledek & shora dolů & hlavička se stavem \emph{catalog read}; entity EF~Core s~atributy, které vstup neměl, a dotaz v~LINQ (obr.~\ref{fig:tutorial}); pás \emph{Facts}: 27 faktů, všechny \emph{carried} (obr.~\ref{fig:fakta}); pás \emph{Records}: 27 \emph{Supplied}, 4 \emph{Incompleteness}, 2 \emph{Convention}, žádný \emph{Failure} (obr.~\ref{fig:zaznamy}) \\
 5. Odnést výstup & \emph{Download all as ZIP} & -- \\
 \bottomrule
@@ -589,7 +589,7 @@ Pojmy převodu shrnuje tab.~\ref{tab:vstup-vystup}, druhy záznamů tab.~\ref{ta
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{2.7cm} Y}
+\begin{tabularx}{\textwidth}{L{3.1cm} Y}
 \toprule
 \textbf{Pojem} & \textbf{Co to je} \\
 \midrule
@@ -609,11 +609,11 @@ Převod je deterministický (S2): týž vstup nad týmž katalogem a touž verz�
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{2.2cm} Y}
+\begin{tabularx}{\textwidth}{L{2cm} Y}
 \toprule
 \textbf{Druh} & \textbf{Význam} \\
 \midrule
-\emph{Failure} & artefakt nevznikl: jednotku nelze přečíst, entita bez klíče míří do cíle, který klíč vyžaduje, dotaz by v~cíli vrátil jiné řádky. Čte se první \\
+\emph{Failure} & artefakt nevznikl: jednotku nelze přečíst, entita bez klíče do cíle, který klíč vyžaduje, dotaz by vrátil jiné řádky \\
 \emph{Loss} & fakt zdroje, který cíl nevyjádří nebo mezireprezentace nenese (dědičnost, kaskády, neunikátní index) \\
 \emph{Convention} & výstup tvrdí něco, co zdroj neřekl (výchozí generátor klíče, jméno klíčové třídy); volba nástroje, ne fakt \\
 \emph{Incompleteness} & chybí fakt, který cíl potřebuje: vztah bez sloupců, neznámý typ, tabulka nenalezená v~katalogu \\
@@ -1196,7 +1196,7 @@ Experimenty pracují nad pěti druhy vstupů (tab.~\ref{tab:vstupy}), které si 
 \texttt{cross:} & 6 & scénář překladu přes hranici ekosystémů z~každého zdroje & -- (3.~stupeň) \\
 \texttt{example:} & 22 & příklady včetně šesti výňatků skutečných projektů (Keycloak, Cofoundry, Ambari, Chinook ×~2, JPetStore) & případová studie běží nad prázdnými tabulkami (\emph{spustitelný}); ostatní 3.~stupeň \\
 \texttt{ldbc:} & 41 & čtecí dotazy LDBC SNB & validační sada LDBC (soudce LDBC, zvlášť) \\
-\texttt{fiben:} & 237 & dotazy FIBEN s~otázkou v~přirozeném jazyce & soudce z~prvního doloženého běhu (regresní) \\
+\texttt{fiben:} & 237 & dotazy FIBEN s~otázkou v~přirozeném jazyce & soudce z~doloženého běhu nástroje (regresní) \\
 \bottomrule
 \end{tabularx}%
 \caption{Vstupy experimentů a jejich počet v~experimentálním běhu za release 2.3.0 (celkem 624). Katalog SEDE (1~714 dotazů) běží jen vlastním během.}
@@ -1285,9 +1285,9 @@ Rozsah práce ukazuje tab.~\ref{tab:cisla}, jednotlivé release tab.~\ref{tab:vy
 začátek práce na forku & 14.~7.~2026, nad prototypem se dvěma desítkami testovacích metod \\
 commity & asi 400 \\
 kód mimo testovací projekt & asi 94~tisíc řádků C\#, z~toho asi 18~tisíc vzorky a katalogy v~\texttt{SampleData} \\
-rozhodnutí, audity, release & 218, 9, 9 \\
+rozhodnutí, audity, release & 218, 9, 10 \\
 testy ve verzi 1.2.0 (specifikace) & 615 \\
-testy v~release \Vydani{} (14.~11.~2026) & 26~102 (.NET) a 16~948 (Java), obě sady zelené \\
+testy v~release \Vydani{} (23.~11.~2026) & 26~108 (.NET) a 16~962 (Java), obě sady zelené \\
 z~toho mimo svůj běh přeskakuje & 13~737 a 13~661, převážně případy běhu SEDE \\
 \bottomrule
 \end{tabular}
@@ -1308,7 +1308,8 @@ z~toho mimo svůj běh přeskakuje & 13~737 a 13~661, převážně případy bě
 2.2.0 & 12.~10. & katalog LDBC souzený validační sadou; kniha tvrzení \\
 2.3.0 & 5.~11. & katalogy LDBC a FIBEN souzené celé, experimentální běh, hledání mezí, srovnání s~jazykovými modely, případové studie \\
 2.4.0 & 11.~11. & čtvrtá doména SEDE, výuková stránka, záznamy silných modelů, opravy vad nalezených katalogem SEDE \\
-\Vydani & 14.~11. & odevzdávaný release: archiv FIBEN z~vlastní kopie projektu, přepínač pro každou datovou sadu, úpravy frontendu, opravy z~revize 13.~11. \\
+2.4.1 & 14.~11. & archiv FIBEN z~vlastní kopie projektu, přepínač pro každou datovou sadu, úpravy frontendu, opravy z~revize 13.~11. \\
+\Vydani & 23.~11. & odevzdávaný release: jména tabulek a sloupců, která T-SQL čte jako klíčová slova, v~anotacích JPA jako oddělené identifikátory; data LDBC jen od LDBC (rozh.~219); původ a licence u~každého dotazu katalogu SEDE; tato zpráva \\
 \bottomrule
 \end{tabularx}%
 \caption{Release projektu.}
@@ -1350,7 +1351,7 @@ Javovská strana bez JVM & Javovské wrappery jsou v~C\#: lexer Javy, čtečka p
 Javovská sada jako klient běžící instance & Sada bere artefakty přes HTTP, takže soudí přesně to, co dostane konzument, a každý její test je i testem REST kontraktu. Diferenční ověření porovnává řádky zdrojové i přeložené varianty s~jediným kanonickým výsledkem v~repozitáři; negativní půlka artefakt mutuje a musí skončit rozdílem & 078, 087, 089 \\
 Úniková cesta & Bez nativního SQL šlo podle specifikace do všech pěti cílů jen 22 ze 41 dotazů katalogu LDBC; s~ním vyjde dotaz i v~cíli, jehož jazyk konstrukci nevysloví, a měří se jako každý překlad & 113 \\
 LDBC a soudce, který není náš & Validační sada LDBC je nezávislá pravda: přehrává se v~pořadí a každé čtení se srovnává s~očekávanými řádky. Režim soudce se všemi procesory a souběžné čtení všech frameworků zkrátily přehrání v~zafixovaném prostředí z~odhadovaných 2,5--5 dnů na necelých třicet hodin na sadu & 110, 117, 164, 166 \\
-Měřicí prostředí & Čísla jsou obhajitelná jen nad zafixovaným prostředím (tab.~\ref{tab:rezimy}); krátký dotaz se opakuje a vykazuje se medián. Soudce FIBEN vznikl z~prvního doloženého běhu a měří regresi mezi verzemi, ne správnost čtení otázky & 145, 149, 165, 193 \\
+Měřicí prostředí & Čísla jsou obhajitelná jen nad zafixovaným prostředím (tab.~\ref{tab:rezimy}); krátký dotaz se opakuje a vykazuje se medián. Soudce FIBEN vznikl z~doloženého běhu nástroje a měří regresi mezi verzemi, ne správnost čtení otázky & 145, 149, 165, 193 \\
 Robustnost & Rekurzivní sestup nad hluboce zanořeným vstupem přetéká zásobník a proces zemře; hloubka se proto měří před sestupem a text dotazu má strop délky. Běh mezí ukázal, že dřív než nástroj se zastaví cíle: Roslyn nad vnořenými lambdami, parser HQL NHibernatu, generátor SQL EF~Core. Javovská půlka přitom našla dvě vady překladu do EclipseLinku: řetěz množinových operací a \texttt{CASE} v~\texttt{ELSE} & 092, 182, 191, 194 \\
 Cizí artefakt & Výstup modelu vstupuje jako adresář souborů s~manifestem a prochází týmiž stupni ověření jako artefakt nástroje. Hlášení modelu o~sobě věřit nelze (Qwen se hlásil jako GPT-4 i Claude), proto model a jeho verzi určuje kanál, ne odpověď; v~kanálu \texttt{code} zachytí každý požadavek proxy, aby bylo vidět, jaký kontext rozhraní k~promptu přidalo & 172, 175, 204, 205 \\
 Prostředí připnuté na obsah & Lock file u~každého projektu, base image digestem, akce CI commitem. Žádný generovaný zdroj ani text o~běhu nenese přihlašovací údaje & 186, 160 \\
@@ -1409,7 +1410,7 @@ javovská půlka běhu mezí padla haldou (31.~10.) & \texttt{OutOfMemoryError} 
 první běh SEDE bez výsledku (8.~11.) & běh držel řádky všech buněk v~paměti až do konce; 1~714 dotazů to neuneslo & soubory běhu se píší po dotazech; druhý běh prošel celý katalog \\
 soudce SEDE nevznikl ani z~druhého běhu & zdrojem .NET půlky byl artefakt Dapperu, který pro 279 z~1~201 dotazů neproběhl; kandidáti soudce obou půlek se liší na 15 z~922 dotazů a rozbor po dotazech hotový není & rozh.~209: zdrojem obou půlek je text katalogu a Dapper je jedním z~cílů; soudce vznikne z~dalšího běhu \\
 výňatky skutečných projektů se nezkompilovaly (24.~10.) & první kontrola experimentálního běhu nad příklady: z~63 řádků (21 příkladů × 3 cíle) došlo do třetího stupně 44; výňatky sahaly na typy mimo výňatek, výčty a mapy & vstupy upraveny; kontrola, která změnila vstupy experimentu, je výjimečně zapsaná jako běh v~\texttt{docs/runs/} \\
-výňatek Cofoundry i po úpravě pod přijetím frameworkem (5.~11.) & typ mimo výňatek a vada překladu (člen zachyceného jména čtený jako sloupec); kontrola po opravě našla další dvě (vyhrazená jména v~\texttt{hbm.xml}, dvojí navigace v~EF~Core) & výňatek upraven, vady opravené s~testem; experimentální běh nad opraveným stromem zaznamenaný není \\
+výňatek Cofoundry pod přijetím frameworkem (5.~11.) & typ mimo výňatek a vada překladu (člen zachyceného jména čtený jako sloupec); kontrola po opravě našla další dvě (vyhrazená jména v~\texttt{hbm.xml}, dvojí navigace v~EF~Core) a srovnání s~modelem 6.~11. třetí: tabulku \texttt{User} psal Hibernate do SQL bez oddělovačů & výňatek upraven, vady opravené s~testem, poslední v~release \Vydani; experimentální běh nad opraveným stromem zaznamenaný není \\
 zacyklený pilotní model (1.~11.) & třetina odpovědí Qwenu skončila stropem tokenů, opakovala jednu větu & žádná: je to výsledek měřený protokolem \\
 \end{longtable}}
 
@@ -1425,7 +1426,7 @@ Záznam měření tu obviňoval měřenou věc, zatímco rozbité bylo měřidlo
 
 \paragraph{SEDE: běh bez výsledku a soudce, který nevznikl.} Běh katalogu jsme napsali pro FIBEN a pro SEDE převzali. Obě půlky držely řádky každé buňky v~paměti až do konce a soubory psaly po posledním dotazu. FIBEN má 237 dotazů a unesl to. SEDE jich má 1~714 a řada z~nich vrací přes sto tisíc řádků: .NET půlka pracovala 8~h 16~min a spadla na poslední alokaci, při skládání textu výsledkového souboru, takže z~osmi hodin nezbyl ani řádek; javovskou půlku jsme zastavili ve třetině katalogu, protože mířila k~témuž. Od té doby se buňka porovná hned po přečtení, drží jen verdikt a počet a soubory se píší po dotazech.
 
-Druhý běh prošel celý katalog a ukázal vadu hlubší, tentokrát v~tom, co běh pokládá za \emph{zdroj}. Obě rozhodnutí o~katalozích říkala \emph{zdrojem je Dapper} a každá sada to četla jinak: javovská spouštěla text katalogu přes JDBC, .NET sada artefakt, který nástroj vyrobil překladem z~Dapperu do Dapperu. U~FIBEN, jehož dotazy do T-SQL převedl náš import, dalo obojí tytéž řádky. Dotazy SEDE psali lidé a rozdíl se ukázal trojím způsobem. Zdroj .NET sady neproběhl u~279 z~1~201 nárokovaných dotazů a každý z~nich pak selhal ve všech třech cílech jako \emph{zdroj neproběhl}, ačkoli selhal překlad. Kandidát soudce pokryl jen 922 dotazů, tedy to, co nástroj umí; regresní soudce z~něj by budoucí verze měřil jen nad dotazy, které přeložila ta první. A Dapper se srovnával sám se sebou, takže kde jeho překlad ztratí projekci, neviděl to nikdo. Rozh.~209 proto v~obou sadách bere za zdroj text katalogu spuštěný tak, jak stojí, a Dapper je cílem jako ostatní. Předpoklad, který katalog převedený vlastním importem vyvrátit nemohl, vyvrátil až katalog psaný cizí rukou; to je i důvod, proč projekt cizí katalogy vůbec vede.
+Druhý běh prošel celý katalog a ukázal vadu hlubší, tentokrát v~tom, co běh pokládá za \emph{zdroj}. Obě rozhodnutí o~katalozích říkala \emph{zdrojem je Dapper} a každá sada to četla jinak: javovská spouštěla text katalogu přes JDBC, .NET sada artefakt, který nástroj vyrobil překladem z~Dapperu do Dapperu. U~FIBEN, jehož dotazy do T-SQL převedl náš import, dalo obojí tytéž řádky. Dotazy SEDE psali lidé a rozdíl se ukázal trojím způsobem. Zdroj .NET sady neproběhl u~279 z~1~201 nárokovaných dotazů a každý z~nich pak selhal ve všech třech cílech jako \emph{zdroj neproběhl}, ačkoli selhal překlad. Kandidát soudce pokryl jen 922 nárokovaných dotazů, tedy to, co nástroj umí; regresní soudce z~něj by budoucí verze měřil jen nad dotazy, které přeložila ta první. A Dapper se srovnával sám se sebou, takže kde jeho překlad ztratí projekci, neviděl to nikdo. Rozh.~209 proto v~obou sadách bere za zdroj text katalogu spuštěný tak, jak stojí, a Dapper je cílem jako ostatní. Předpoklad, který katalog převedený vlastním importem vyvrátit nemohl, vyvrátil až katalog psaný cizí rukou; to je i důvod, proč projekt cizí katalogy vůbec vede.
 
 \subsection{Odchylky od specifikace}\label{sec:odchylky}
 
@@ -1460,7 +1461,7 @@ Při vývoji jsme soustavně používali asistenta pro programování (Claude Co
 
 \section{Experimentální část}\label{sec:exp}
 
-Požadavky T1--T3 plní projekt částečně: ručí za vstup, matici a \emph{měřidlo}, ne za čísla (rozh.~183, 184). Čísla níže jsou záznamy v~\texttt{docs/runs/}, každý s~commitem, strojem a prostředím (tab.~\ref{tab:zaznamy-behu}). Popisují stav před opravami, které odevzdávaný release od stromů těchto běhů dělí.
+Požadavky T1--T3 plní projekt částečně: ručí za vstup, matici a \emph{měřidlo}, ne za čísla (rozh.~183, 184). Čísla níže jsou záznamy v~\texttt{docs/runs/} (tab.~\ref{tab:zaznamy-behu}); záznam jmenuje commit, stroj a prostředí, jen tři měření S3 ze srpna commit nenesou. Popisují stav před opravami, které odevzdávaný release od stromů těchto běhů dělí.
 
 \begin{table}[H]
 \centering\footnotesize
@@ -1468,6 +1469,8 @@ Požadavky T1--T3 plní projekt částečně: ručí za vstup, matici a \emph{m�
 \toprule
 \textbf{Běh} & \textbf{Datum (2026)} & \textbf{Strom} \\
 \midrule
+výkon překladu (S3) & 21.--26.~8. & bez commitu \\
+podíl F4 & 21.~10. & \texttt{223e791} a následující commit \\
 běh mezí & 29.~10.--1.~11. & konec října \\
 celý vstup & 30.~10. & konec října \\
 běh FIBEN & 2.~11. & strom release 2.3.0 (\texttt{63d0b81}) \\
@@ -1475,7 +1478,7 @@ soudce LDBC & 2.--5.~11. & strom release 2.3.0 (\texttt{63d0b81}) \\
 experimentální běh & 5.~11. & strom release 2.3.0 (\texttt{a105b3d}) \\
 srovnání s~jazykovými modely & 1., 3., 5. a 6.~11. & tab.~\ref{tab:llm-behy} \\
 běh SEDE (druhý) & 8.--9.~11. & \texttt{1f7430b} \\
-velikost sad & 14.~11. & strom release \Vydani \\
+velikost sad & 23.~11. & strom release \Vydani \\
 \bottomrule
 \end{tabular}
 \caption{Záznamy, ze kterých čísla této kapitoly pocházejí. \emph{Strom release} je commit, který se od tagu liší jen dokumentací, číslem verze nebo změnou bez vlivu na výsledek (\texttt{docs/runs/README.md}).}
@@ -1517,10 +1520,10 @@ velikost sad & 14.~11. & strom release \Vydani \\
 \toprule
 \textbf{Dvojice} & \textbf{n} & \textbf{odm.} & \textbf{nat.\ SQL} & \textbf{přečteno} & \textbf{zkomp.} & \textbf{přijato} & \textbf{n4} & \textbf{běží} & \textbf{shoda} & \textbf{mapování} \\
 \midrule
-.NET → .NET & 1~341 & 1 & 129 & 1~340 & 1~338 & 1~337 & 1~186 & 1~183 & 1~179 & 99 \% \\
-.NET → Java & 1~341 & 2 & 95 & 1~339 & 1~336 & 1~335 & 1~186 & 1~183 & 1~179 & 69 \% \\
-Java → .NET & 531 & 4 & 42 & 527 & 527 & 527 & 492 & 489 & 486 & 99 \% \\
-Java → Java & 531 & 4 & 29 & 527 & 527 & 527 & 492 & 490 & 486 & 75 \% \\
+.NET → .NET & 1~341 & 1 & 129 & 1~340 & 1~338 & 1~337 & 1~186 & 1~183 & 1~179 & 99~\% \\
+.NET → Java & 1~341 & 2 & 95 & 1~339 & 1~336 & 1~335 & 1~186 & 1~183 & 1~179 & 69~\% \\
+Java → .NET & 531 & 4 & 42 & 527 & 527 & 527 & 492 & 489 & 486 & 99~\% \\
+Java → Java & 531 & 4 & 29 & 527 & 527 & 527 & 492 & 490 & 486 & 75~\% \\
 \bottomrule
 \end{tabular}
 \caption{Tabulka T2 × T3 po dvojicích ekosystémů, experimentální běh 5.~11.~2026.}
@@ -1592,7 +1595,7 @@ z~nich ve shodě se zdrojem & 286 & 1~013 & 813 & 746 & 800 \\
 
 Protokol (tab.~\ref{tab:protokol}) byl proveden ve čtyřech zaznamenaných bězích (tab.~\ref{tab:llm-behy}). Vzorek prvních tří je týchž třináct buněk: kategorie matice ve všech čtyřech směrech, jeden scénář jen s~entitami a jeden malý příklad. Čtvrtý běh přidal 43 buněk ve třech sadách: \emph{základní} (další kategorie), \emph{velká} (případové studie jako celé projekty, dlouhý dotaz, FIBEN, LDBC) a \emph{záludná} (vstupy, na nichž chyboval sám nástroj).
 
-Pilotní model je nejsilnější model s~otevřenými váhami, který se vejde na stroj se 16~GB (rozh.~202): Qwen3.5-9B~\cite{qwen} v~serveru llama.cpp~\cite{llamacpp}. Na čtyřech jádrech trval pokus nad buňkou matice 11 až 62 minut, s~mediánem 16 minut. Model výrobce se od něj v~nastavení liší jen adresou, modelem, stropem tokenů, cenami a klíčem; teplotu ani seed nepřijímá, takže jeho tři pokusy na buňku nejsou bajtově shodné.
+Pilotní model je nejsilnější model s~otevřenými váhami, který se vejde na stroj se 16~GB (rozh.~202): Qwen3.5-9B~\cite{qwen} v~serveru llama.cpp~\cite{llamacpp}. Na čtyřech jádrech trval pokus 5 až 62 minut, s~mediánem 16 minut. Model výrobce se od něj v~nastavení liší jen adresou, modelem, stropem tokenů, cenami a klíčem; teplotu nepřijímá a seed ignoruje, takže jeho tři pokusy na buňku nejsou bajtově shodné.
 
 \begin{table}[H]
 \centering\footnotesize
@@ -1602,7 +1605,7 @@ Pilotní model je nejsilnější model s~otevřenými váhami, který se vejde n
 \midrule
 1.~11. & Qwen3.5-9B, Q4\_K\_M (otevřené váhy, lokálně v~llama.cpp na CPU) & \texttt{api} & 13 buněk, \texttt{zero-shot}, teplota 0, seed 1, strop 8~192 tokenů; 39 pokusů, 17,1~h strojového času, 0~USD \\
 3.~11. & Claude Fable 5.1 & \texttt{code} & 13 buněk, \texttt{zero-shot} a \texttt{few-shot}; 78 pokusů, teplota nenastavitelná, úsilí \texttt{high}; předplatné, cena podle ceníku 19,61~USD \\
-5.~11. & Claude Fable 5.1 & \texttt{api} & tytéž buňky a prompty jako 3.~11.; 78 pokusů, 61,5~min, 21,68~USD účtovaných \\
+5.~11. & Claude Fable 5.1 & \texttt{api} & tytéž buňky a prompty jako 3.~11.; 78 pokusů, 61,5~min, cena podle ceníku 21,68~USD \\
 6.~11. & Claude Opus 5.5 & \texttt{code} & 43 buněk ve třech sadách, obě varianty; 258 pokusů, dvě pětihodinová okna předplatného, cena podle ceníku 111,53~USD \\
 \bottomrule
 \end{tabularx}%
@@ -1630,13 +1633,13 @@ Tab.~\ref{tab:llm-vysledky} staví vedle sebe podíl po pokusech a best-of-n. N�
 \toprule
 \textbf{Model, kanál} & \textbf{Varianta} & \textbf{Buněk} & \textbf{přečteno} & \textbf{zkompilováno} & \textbf{přijato} & \textbf{shoda} & \textbf{best-of-n shoda} \\
 \midrule
-Qwen3.5-9B, api & zero-shot & 13 & 8 \% & 8 \% & 0 \% & 0 \% & 0 \% \\
-Fable 5.1, code & zero-shot & 13 & 100 \% & 100 \% & 87 \% & 85 \% & 91 \% \\
-Fable 5.1, code & few-shot & 13 & 100 \% & 100 \% & 85 \% & 82 \% & 82 \% \\
-Fable 5.1, api & zero-shot & 13 & 100 \% & 100 \% & 87 \% & 85 \% & 91 \% \\
-Fable 5.1, api & few-shot & 13 & 100 \% & 100 \% & 87 \% & 85 \% & 91 \% \\
-Opus 5.5, code & zero-shot & 43 & 98 \% & 89 \% & 73 \% & 77 \% & 89 \% \\
-Opus 5.5, code & few-shot & 43 & 98 \% & 93 \% & 79 \% & 80 \% & 85 \% \\
+Qwen3.5-9B, api & zero-shot & 13 & 8~\% & 8~\% & 0~\% & 0~\% & 0~\% \\
+Fable 5.1, code & zero-shot & 13 & 100~\% & 100~\% & 87~\% & 85~\% & 91~\% \\
+Fable 5.1, code & few-shot & 13 & 100~\% & 100~\% & 85~\% & 82~\% & 82~\% \\
+Fable 5.1, api & zero-shot & 13 & 100~\% & 100~\% & 87~\% & 85~\% & 91~\% \\
+Fable 5.1, api & few-shot & 13 & 100~\% & 100~\% & 87~\% & 85~\% & 91~\% \\
+Opus 5.5, code & zero-shot & 43 & 98~\% & 89~\% & 73~\% & 77~\% & 89~\% \\
+Opus 5.5, code & few-shot & 43 & 98~\% & 93~\% & 79~\% & 80~\% & 85~\% \\
 \bottomrule
 \end{tabular}
 \caption{Podíly pokusů jazykových modelů po stupních (\emph{shoda} nad buňkami s~měřítkem ekvivalence; best-of-n podíl buněk, v~nichž uspěl aspoň jeden pokus).}
@@ -1655,7 +1658,7 @@ nad složitějšími vstupy rozdíl roste & Opus 5.5 padá na faktech frameworku
 cena & 258 pokusů Opus 5.5 stojí podle ceníku 111,53~USD a pokus nad Cofoundry trvá 10--12 minut; nástroj přeloží projekt o~100 entitách a 100 dotazech pod sekundu (tab.~\ref{tab:meze}) \\
 \bottomrule
 \end{tabularx}%
-\caption{Co ze srovnání plyne. Varianty \texttt{schema}, \texttt{rag}, \texttt{repair} a \texttt{agent} jsou v~protokolu připravené, ale nezaznamenané: patří navazující diplomové práci.}
+\caption{Co ze srovnání plyne. Varianta \texttt{schema} je připravená, ale žádný běh ji nenesl; varianty \texttt{rag}, \texttt{repair} a \texttt{agent} protokol jmenuje a ovladač je nenese. Všechny čtyři patří navazující diplomové práci.}
 \label{tab:llm-zjisteni}
 \end{table}
 

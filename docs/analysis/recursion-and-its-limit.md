@@ -441,7 +441,7 @@ U vážených dotazů (BI 15, BI 19, BI 20) je mez v krocích ještě slabší: 
 
 ## 6. Normalizace běhů a cesta bez zjednodušení
 
-Cíl pro katalog: **každý dotaz má na MIS3 běžet mezi 0,2 s a 300 s**, a dosáhnout toho má volba dat, ne ohýbání textu. Pět dotazů na cesty k tomu přidává druhou otázku, jestli zjednodušení zůstane. Rozhodnutí [140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) volí **jeden tvar textu** pro všech pět a **jeden parametr z dat**; tenhle oddíl drží podklad, ze kterého vychází, a to, co ještě změřené není.
+Cíl pro katalog: **každý dotaz má na měřicím stroji běžet mezi 0,2 s a 300 s**, a dosáhnout toho má volba dat, ne ohýbání textu. Pět dotazů na cesty k tomu přidává druhou otázku, jestli zjednodušení zůstane. Rozhodnutí [140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) volí **jeden tvar textu** pro všech pět a **jeden parametr z dat**; tenhle oddíl drží podklad, ze kterého vychází, a to, co ještě změřené není.
 
 ### 6.1 Co s časem udělají větší data
 

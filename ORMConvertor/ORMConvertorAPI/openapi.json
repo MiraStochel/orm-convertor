@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "ORMConvertor",
-    "version": "2.4.1"
+    "version": "2.4.2"
   },
   "servers": [
     {
@@ -1599,6 +1599,9 @@
           "set",
           "title",
           "description",
+          "created",
+          "licence",
+          "source",
           "parameters",
           "tables",
           "columns",
@@ -1629,6 +1632,16 @@
             "type": "string"
           },
           "description": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date"
+          },
+          "licence": {
+            "type": "string"
+          },
+          "source": {
             "type": "string"
           },
           "parameters": {

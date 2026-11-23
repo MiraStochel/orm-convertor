@@ -25,6 +25,7 @@ Seznam položek k vývoji. **Rozhodnutí** končí novým souborem v [`decisions
 | [Počet jednotek bez limitu a nadlineární čas](#počet-jednotek-nemá-limit-a-čas-s-ním-roste-nadlineárně) | Užitečné | rozhodnutí | S3, S4 |
 | [Vazba výkladové stránky na katalog](#výkladová-stránka-není-vázaná-na-katalog-příkladů) | Užitečné | práce | S7 |
 | [Citace nahrazených rozhodnutí](#citace-nahrazených-rozhodnutí-nemá-pravidlo) | Užitečné | rozhodnutí | — |
+| [Schéma a generátor klíče neoddělené](#jméno-schématu-a-jména-generátoru-klíče-jdou-do-mapování-neoddělená) | Užitečné | práce, rozhodnutí | F7, F9, F11 |
 
 ---
 
@@ -140,6 +141,11 @@ Souhrn experimentálního běhu dává úplnost přenesených mapovacích vlastn
 *Rozhodnutí. Zjištění revize [2026-11-13](./audits/2026-11-13-pre-release-2-4-1-audit.md), nález 3.5; stavy nahrazení podle rozh. [150](./decisions/150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md).*
 
 Rozhodnutí se stavem `nahrazeno` (033, 055, 099, 124, 125, 127, 135, 213) citují komentáře kódu a frontendu i živé dokumenty jako podklad dnešního chování; čtenář dojde k platnému znění přes řetěz stavů. Je třeba rozhodnout, zda se cituje rozhodnutí, které volbu udělalo, nebo hlava řetězu nahrazení. Nezávisle na pravidle míří tři citace v `architecture.md` na část, kterou jiné rozhodnutí nahradilo, a patří jim cíl, který platí: §5 na rozh. 029 pro výklad S4 (nahrazuje 160), §6.2 na tabulku os rozh. 182 (190) a na tabulku databází rozh. 174 (208).
+
+#### Jméno schématu a jména generátoru klíče jdou do mapování neoddělená
+*Práce a rozhodnutí. Oddělování jmen tabulek a sloupců v [`architecture.md`](./architecture.md) §5 (jméno, které je klíčovým slovem cíle); vzor odmítnutí tam, kde oddělený tvar není, rozh. [217](./decisions/217-what-the-host-of-native-sql-reads-inside-a-bracketed-name-goes-out-behind-its-escape-and-refuses-the-query-where-it-has-none.md). Požadavky F7, F9, F11.*
+
+Jméno tabulky a sloupce, které T-SQL čte jako klíčové slovo, píše builder JPA do anotací jako oddělený identifikátor (`JpaDatabaseNames`) a builder NHibernatu do `hbm.xml` v obrácených apostrofech. Ostatní databázová jména týmž místem neprocházejí: v JPA `schema` v `@Table` a `@JoinTable`, `sequenceName` a `schema` v `@SequenceGenerator` a `table`, `schema`, `pkColumnName` a `valueColumnName` v `@TableGenerator`; v NHibernatu atribut `schema` třídy a spojovací tabulky a jméno sekvence v parametru generátoru. Entita ve schématu `Order` nebo s čítačem ve sloupci `Key` tak vyjde s holým jménem a bez záznamu. Co s holým a co s odděleným jménem na těchto místech udělá Hibernate, EclipseLink a NHibernate v připnutých verzích, změřené není. Práce začíná měřením: schéma, sekvence a tabulka čítače s vyhrazenými jmény v `hibernate/ReservedSqlNameClaimsTest` a `eclipselink/ReservedSqlNameClaimsTest` javové sady a v testu nad mapováním NHibernatu, každý nad SQL, které implementace vygeneruje. Kde implementace oddělený tvar přijme, projde jméno týmž místem jako tabulka a sloupec, takže oddělování má jeden mechanismus pro každé databázové jméno; čtečka JPA oddělovače schématu odkládá už dnes. Kde ho nepřijme, je třeba rozhodnout, zda se entita odmítá záznamem `Failure`, který jméno jmenuje, jak to rozh. 217 dělá u nativního SQL.
 
 ## Mimo rozsah
 

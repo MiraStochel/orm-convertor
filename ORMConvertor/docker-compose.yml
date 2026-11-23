@@ -58,13 +58,13 @@ services:
         condition: service_healthy
 
   # Four databases: WideWorldImporters; LdbcSnb with the LDBC SNB Interactive v1 data set
-  # (decision 110), loaded on the first start - about a minute at scale factor 1, while the
+  # (decision 110), loaded on the first start - a few minutes at scale factor 1, while the
   # server already answers; Fiben with the FIBEN benchmark (decision 149), loaded the same
   # way with the judge of its catalog beside the data; and Sede with the data dump of
   # dba.stackexchange.com for the SEDE query set (decision 208), loaded the same way in a few
   # minutes. LDBC_SCALE_FACTOR picks another published scale factor, or none; FIBEN_DATASET
   # another commit of IBM/fiben-benchmark, or none; SEDE_DATASET another site and date of
-  # the dump with SEDE_DATASET_URL and SEDE_DATASET_MD5 of its archive, or none; WWI_BACKUP
+  # its file in the archive.org item with SEDE_DATASET_URL and SEDE_DATASET_MD5 of its archive, or none; WWI_BACKUP
   # another release of Microsoft/sql-server-samples, or none. Each none builds the image
   # without that database, which is how the system is built when a publisher's address is
   # gone (decision 218); without WideWorldImporters, ORMCONVERTOR_CATALOG_DATABASE names the

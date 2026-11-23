@@ -634,7 +634,7 @@ SELECT a.AuthorId, a.Name, a.BornOn,
 
 Čtyři pozorování, každé s důsledkem pro mezireprezentaci:
 
-**1. Jeden `<select>` dal čtyři různé příkazy.** Bez `WHERE`, se dvěma různými `WHERE` a s oběma. Dotazová jednotka MyBatisu tedy **není dotaz, ale rodina dotazů**, a `getBoundSql` vrací jednoho člena. Mezireprezentace žádný pojem pro takovou rodinu nemá, a nástroj ji proto odmítá (zúžení F8, rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)). Samotné čtení jednoho členu je slepá ulička: `[oba parametry null]` a `[oba parametry]` se liší celou klauzulí `WHERE`, takže překlad postavený na jediné sadě parametrů by tiše zahodil zbytek rodiny.
+**1. Jeden `<select>` dal čtyři různé příkazy.** Bez `WHERE`, se dvěma různými `WHERE` a s oběma. Dotazová jednotka MyBatisu tedy **není dotaz, ale rodina dotazů**, a `getBoundSql` vrací jednoho člena. Mezireprezentace žádný pojem pro takovou rodinu nemá, a nástroj ji proto odmítá (vyslovená mez F8, rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)). Samotné čtení jednoho členu je slepá ulička: `[oba parametry null]` a `[oba parametry]` se liší celou klauzulí `WHERE`, takže překlad postavený na jediné sadě parametrů by tiše zahodil zbytek rodiny.
 
 **2. `<where>` není text, je to operace nad stromem podmínek.** Ve variantě `[jen namePattern]` je ve `WHERE  a.Name LIKE ?` — počáteční `AND`, které je v mapperu napsané, zmizelo. `<where>` klauzuli vynechá, když je prázdná, a odstraní úvodní `AND` nebo `OR`, když není. Je to přesně ta operace, kterou v mezireprezentaci dělá strom podmínek (invariant „podmínky jsou strom, ne plochý seznam"), jen vyjádřená v XML.
 

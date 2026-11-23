@@ -85,7 +85,7 @@ RUN mkdir -p /opt/fiben && \
 # the MD5 the item publishes for it, so that a replaced file is a failed build and not another
 # data set under the same name; none leaves the database out.
 # The tools of the loader: 7z unpacks the archive, python3 turns the XML into CSV. A copy of
-# our own is asked first, as for every set; archive.org serves the file slowly and drops a
+# our own is asked first, as for every set but the LDBC data; archive.org serves the file slowly and drops a
 # connection after an hour or two, so the download from there resumes where it stopped, up
 # to thirty times.
 ARG SEDE_DATASET=dba.stackexchange.com-2024-04-06

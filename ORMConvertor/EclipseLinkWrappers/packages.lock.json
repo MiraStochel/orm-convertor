@@ -18,32 +18,32 @@
       "abstractwrappers": {
         "type": "Project",
         "dependencies": {
-          "Common": "[2.4.1, )",
-          "Model": "[2.4.1, )"
+          "Common": "[2.4.2, )",
+          "Model": "[2.4.2, )"
         }
       },
       "common": {
         "type": "Project",
         "dependencies": {
           "Microsoft.CodeAnalysis.CSharp": "[5.6.0, )",
-          "Model": "[2.4.1, )"
+          "Model": "[2.4.2, )"
         }
       },
       "jakartapersistence": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.4.1, )",
-          "Common": "[2.4.1, )",
-          "JavaEntityParsing": "[2.4.1, )",
-          "Model": "[2.4.1, )",
-          "TransactSql": "[2.4.1, )"
+          "AbstractWrappers": "[2.4.2, )",
+          "Common": "[2.4.2, )",
+          "JavaEntityParsing": "[2.4.2, )",
+          "Model": "[2.4.2, )",
+          "TransactSql": "[2.4.2, )"
         }
       },
       "javaentityparsing": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.4.1, )",
-          "Model": "[2.4.1, )"
+          "AbstractWrappers": "[2.4.2, )",
+          "Model": "[2.4.2, )"
         }
       },
       "model": {
@@ -52,10 +52,10 @@
       "transactsql": {
         "type": "Project",
         "dependencies": {
-          "AbstractWrappers": "[2.4.1, )",
-          "Common": "[2.4.1, )",
+          "AbstractWrappers": "[2.4.2, )",
+          "Common": "[2.4.2, )",
           "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.78.1, )",
-          "Model": "[2.4.1, )"
+          "Model": "[2.4.2, )"
         }
       },
       "Microsoft.CodeAnalysis.CSharp": {
