@@ -79,12 +79,31 @@
 \geometry{margin=2cm}
 \setlength{\parskip}{3pt}
 
-\renewcommand{\arraystretch}{1.2}
+\renewcommand{\arraystretch}{1.3}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 % Sloupec jako podíl šířky textu včetně svých okrajů: podíly jedné tabulky dávají dohromady 1
 % a tabulka je pak přesně \linewidth široká. Pro longtable, kde X není.
 \newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{\dimexpr#1\linewidth-2\tabcolsep\relax}}
+% Popisek longtable stojí pod tabulkou (v \endlastfoot) a sází se jako popisek plovoucí tabulky:
+% v základní velikosti písma, na šířku textu (\LTcapwidth se nastavuje za \begin{document})
+% a se stejným odstupem od spodní linky. Je to definice z longtable.sty s \normalsize,
+% podpěrou nad prvním řádkem a mezerou pod popiskem místo \vskip\baselineskip.
+% Každá longtable má před \endfoot prázdný řádek vysoký jako \endlastfoot (linka a popisek): strana,
+% na které tabulka pokračuje, tak popisku drží místo a popisek nikdy nevyjde sám na další stranu.
+\makeatletter
+\def\LT@makecaption#1#2#3{%
+  \LT@mcol\LT@cols c{\hbox to\z@{\hss\parbox[t]\LTcapwidth{\normalsize
+    \rule{\z@}{17.8pt}%
+    \sbox\@tempboxa{#1{#2: }#3}%
+    \ifdim\wd\@tempboxa>\hsize
+      #1{#2: }#3%
+    \else
+      \hbox to\hsize{\hfil\box\@tempboxa\hfil}%
+    \fi
+    \endgraf\vskip 6pt}%
+  \hss}}}
+\makeatother
 
 \def\ResearchProject{Research project}
 
@@ -105,6 +124,7 @@
 
 \begin{document}
 \shorthandoff{-}
+\setlength{\LTcapwidth}{\textwidth}
 
 \centerline{\Large \textbf{Report of research project}}
 \centerline{ \textbf{Department of Software Engineering}}
@@ -118,7 +138,7 @@
  \textbf{Supervisor:} & \SupervisorFullName \\
  \textbf{Consultants:} & \ConsultantsFullName \\[1em]
  \textbf{Repository:} & \url{https://github.com/MiraStochel/orm-convertor}, release \texttt{\Vydani} \\
- \textbf{Date:} & 15. listopadu 2026 \\
+ \textbf{Date:} & 22.~listopadu~2026 \\
 \end{tabular}}
 
 \bigskip
@@ -184,11 +204,11 @@ Srovnání s~jazykovými modely (kap.~\ref{sec:llm}) ukazuje, že silný model p
 
 \subsection{Vztah k~dalším projektům}
 
-Projekt vznikl ve výzkumné skupině Adaptive Data Management (ADaM) na KSI MFF UK~\cite{adam-web}. Prototyp vytvořil Milan Abrahám v~diplomové práci~\cite{abraham-repo}; jeho návrh popisují~\cite{ormorpher-ase,ormorpher-jss}. Projekt pokračuje ve forku, bez sledování původního repozitáře. Vztah k~ostatním pracím skupiny shrnuje tab.~\ref{tab:vztahy}.
+Projekt vznikl ve výzkumné skupině Adaptive Data Management (ADaM) na KSI MFF UK~\cite{adam-web}. Prototyp vytvořil Milan Abrahám v~diplomové práci~\cite{abraham-repo}; jeho návrh popisují~\cite{ormorpher-ase,ormorpher-jss}. Vztah k~ostatním pracím skupiny shrnuje tab.~\ref{tab:vztahy}.
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{4.2cm} Y Y}
+\begin{tabularx}{\textwidth}{L{3.7cm} L{6.6cm} Y}
 \toprule
 \textbf{Práce skupiny} & \textbf{Co řeší} & \textbf{Vztah k~ORMorpheru} \\
 \midrule
@@ -196,14 +216,14 @@ MM-cat~\cite{mmcat-intro,koupil-holubova-2022}, MM-quecat, MM-evoque, MM-evocat~
 Database Mapping Optimization~\cite{mmcat-aimm}, mm-mapsearch~\cite{mm-mapsearch} & volba fyzické reprezentace dat jako optimalizační úloha: nad pracovní zátěží měří latence v~PostgreSQL, MongoDB a Neo4j, učí z~nich modely latence a prohledává prostor mapování metodou Monte Carlo Tree Search & odpovídá, \emph{jak} mají být data uložena; Advisor ORMorpheru volí framework nebo kombinaci frameworků pro zátěž dotazů z~naměřeného času a paměti, tedy \emph{čím} k~nim aplikace přistupuje. Oba ověřují volbu měřením \\
 diplomové práce M.~Čorovčáka a I.~Oboňové & univerzální objektový model a migrace aplikačního kódu mezi relačními, grafovými a dokumentovými systémy s~využitím velkých jazykových modelů (Čorovčák); migrace dotazů mezi relačními a grafovými systémy touž cestou (Oboňová) & týž problém opačnou cestou: ORMorpher jde explicitními pravidly, heuristikami a mezireprezentací, a proto dává pro přístupy založené na LLM deterministickou baseline a společné měřidlo (kap.~\ref{sec:exp}) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Vztah k~pracím skupiny ADaM.}
 \label{tab:vztahy}
 \end{table}
 
 \subsection{Návaznost na specifikaci}
 
-Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}) a harmonogram počítal s~odevzdáním v~listopadu. Stav jednotlivých požadavků uvádí tab.~\ref{tab:prehled-pozadavku}: \emph{splněno}, \emph{splněno částečně} (znění požadavku jmenuje něco, co release nedává; co, říká sloupec \emph{Mez nebo zúžení}), \emph{připraveno} (specifikace žádá jen přípravu pro navazující práci) a \emph{nerealizováno}. Co který release přinesl, říká tab.~\ref{tab:vydani}.
+Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}). Stav jednotlivých požadavků uvádí tab.~\ref{tab:prehled-pozadavku}: \emph{splněno}, \emph{splněno částečně} (znění požadavku jmenuje něco, co release nedává; co, říká sloupec \emph{Mez nebo zúžení}), \emph{připraveno} (specifikace žádá přípravu pro navazující práci) a \emph{nerealizováno}. Co který release přinesl, říká tab.~\ref{tab:vydani}.
 
 \begin{table}[H]
 \centering\footnotesize
@@ -215,14 +235,13 @@ Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}) a harmonogra
 2 -- javovské frameworky & hotový (2.0.0 a dál): Hibernate a EclipseLink jako dva profily nad sdílenou vrstvou Jakarta Persistence, MyBatis nad vrstvami jazyka Java a T-SQL, javovská testovací sada s~diferenčním ověřením, překlad přes hranici ekosystémů oběma směry & F7--F10, F12, F13 \\
 3 -- Advisor, benchmarking a experimenty & T1--T3 splněné částečně (vstup případové studie, matice kategorií, měřidlo experimentálního běhu); T4--T6 připravené protokolem a změřené na vzorcích, plné experimenty patří navazující diplomové práci; Advisor, T7 a izolace spouštění měřeného kódu odložené až za experimenty (rozh.~171) & T1--T7, F15, S4 \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Cíle specifikace a jejich stav.}
 \label{tab:cile}
 \end{table}
 
 {\footnotesize
-\begin{longtable}{P{0.33} P{0.14} P{0.33} P{0.20}}
-\caption{Požadavky specifikace v~release \Vydani.}\label{tab:prehled-pozadavku}\\
+\begin{longtable}{P{0.32} P{0.12} P{0.36} P{0.20}}
 \toprule
 \textbf{Požadavek} & \textbf{Stav} & \textbf{Mez nebo zúžení} & \textbf{Kde ve zprávě} \\
 \midrule
@@ -231,7 +250,10 @@ Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}) a harmonogra
 \textbf{Požadavek} & \textbf{Stav} & \textbf{Mez nebo zúžení} & \textbf{Kde ve zprávě} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Požadavky specifikace v~release \Vydani.}\label{tab:prehled-pozadavku}\\
 \endlastfoot
 \textbf{F1--F3} Složené identifikátory, jejich překlad, cizí klíče na ně, vztahy 1:1, 1:N a N:M & splněno &-- & kap.~\ref{sec:co-jak}, příklady 2 a~3 \\
 \textbf{F4--F6} Metadata ze schématu databáze, jejich sloučení se zdrojem, úplné mapování z~neúplného vstupu & splněno &-- & kap.~\ref{sec:co-jak}, příklad~1 \\
@@ -244,7 +266,7 @@ Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}) a harmonogra
 \textbf{F15} Výběr cílového frameworku (Advisor) & nerealizováno & rozšíření na šest frameworků bylo podmíněno časovými možnostmi; zděděný Advisor měří dál jen Dapper a EF~Core a je vyňatý ze záruk & tab.~\ref{tab:vynate}, \ref{tab:odchylky} \\
 \midrule
 \textbf{S1--S3} Modularita, determinismus, výkon překladu & splněno & překlad projektu trvá 0,2--0,7~s, mez je 30~s & tab.~\ref{tab:projekty}, \ref{tab:meze}, kap.~\ref{sec:vstup-vystup} \\
-\textbf{S4} Izolace a bezpečnost spouštění & splněno částečně & přihlašovací údaje nejsou v~repozitáři ani ve výstupech; izolace spouštění nerealizována s~Advisorem & kap.~\ref{sec:konfigurace} \\
+\textbf{S4} Izolace a bezpečnost spouštění & splněno částečně & část řeší Docker; přihlašovací údaje nejsou v~repozitáři ani ve výstupech; izolace spouštění nerealizována s~Advisorem & kap.~\ref{sec:konfigurace} \\
 \textbf{S5} Reprodukovatelné prostředí & splněno & experimentální běh běží v~týchž kontejnerech na vyžádání, build ho nespouští & kap.~\ref{sec:testy}, \ref{sec:reprodukce} \\
 \textbf{S6} Pozorovatelnost a auditovatelnost & splněno částečně & záznam převodu nenese výsledky kompilace a testů, protože překladová cesta nekompiluje; nesou je záznamy běhů sad & kap.~\ref{sec:vstup-vystup} \\
 \textbf{S7} Uživatelská přívětivost & splněno &validace na klientovi je pomocník, rozhoduje server & kap.~\ref{sec:tutorial}, \ref{sec:obrazovka} \\
@@ -256,7 +278,7 @@ Specifikace rozdělila práci do tří cílů (tab.~\ref{tab:cile}) a harmonogra
 
 Repozitář označuje tytéž stavy slovníkem svých záruk: \emph{nárokovaný}, \emph{nárokovaný v~užším rozsahu} a \emph{vyňatý} (\path{docs/architecture.md}, §9, a \path{docs/traceability.md}; anglicky kořenové \texttt{README.md}, \emph{Guarantees}). Pod \emph{vyňatý} tam spadají řádky \emph{připraveno} i \emph{nerealizováno} a první věta požadavku S4.
 
-Odevzdávaný release \texttt{\Vydani} (tag ze 14.~listopadu~2026) vznikl, protože build nad \texttt{2.4.0} v~čistém prostředí neprojde: repozitář FIBEN z~GitHubu zmizel a build proto bere jeho archiv z~vlastní kopie projektu (tab.~\ref{tab:sady}). Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
+Odevzdávaný release \texttt{\Vydani} (tag ze 14.~listopadu~2026) vznikl, protože build nad \texttt{2.4.0} v~čistém prostředí neprojde: repozitář FIBEN z~GitHubu zmizel a build proto bere jeho archiv z~vlastní kopie projektu (tab.~\ref{tab:sady}). Počty testů a záznamy běhů patří tagu \texttt{\Vydani} a starším stromům (tab.~\ref{tab:zaznamy-behu}); zdroje datových sad a časy buildu v~kap.~\ref{sec:nasazeni} odpovídají větvi \texttt{main} z~22.~listopadu~2026. Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
 
 \subsection{Struktura dokumentu}
 
@@ -274,10 +296,12 @@ Odevzdávaný release \texttt{\Vydani} (tag ze 14.~listopadu~2026) vznikl, proto
 \ref{sec:exp} Experimentální část & metodika, výsledky nástroje, srovnání s~jazykovými modely a postup reprodukce \\
 \ref{sec:zaver} Závěr & plnění požadavků, navazující práce a osobní zhodnocení projektu \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Struktura dokumentu.}
 \label{tab:struktura}
 \end{table}
+
+\pagebreak
 
 \section{Nasazení a běh}\label{sec:nasazeni}
 
@@ -305,22 +329,22 @@ Image nástroje vznikají ze dvou souborů \texttt{Dockerfile} a služby popisuj
 \texttt{Advisor}, \texttt{AdvisorBenchmarking} & ILP model nad GLPK; měření generovaného kódu \\
 \texttt{SampleData}, \texttt{Tests} & vzorky, příklady a katalogy LDBC, FIBEN a SEDE; sada xUnit~v3 s~experimentálními běhy \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Projekty solution (podrobně \texttt{docs/architecture.md}, §2).}
 \label{tab:projekty}
 \end{table}
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{1.7cm} Y L{5.2cm} L{3.5cm}}
+\begin{tabularx}{\textwidth}{L{2.6cm} Y L{5.2cm} L{3.4cm}}
 \toprule
 \textbf{Databáze} & \textbf{Sada} & \textbf{Odkud ji build bere} & \textbf{Přepínač, který ji vynechá} \\
 \midrule
-\texttt{WideWorld\-Importers} & vzorová databáze & release \path{Microsoft/sql-server-samples} & \texttt{WWI\_BACKUP=none} \\
+\texttt{WideWorldImporters} & vzorová databáze & release \path{Microsoft/sql-server-samples} & \texttt{WWI\_BACKUP=none} \\
 \texttt{LdbcSnb} & LDBC SNB Interactive v1~\cite{ldbc}, scale factor 1; archiv dat 222~MB a validační sada 205~MB & \texttt{datasets.ldbcouncil.org} (rozh.~219) & \texttt{LDBC\_SCALE\_FACTOR=none} \\
 \texttt{Fiben} & benchmark IBM Research~\cite{fiben}; archiv 80~MB & asset release \texttt{data\_sets} repozitáře, checksum v~\path{database/datasets.sha256} (rozh.~215) & \texttt{FIBEN\_DATASET=none} \\
 \texttt{Sede} & dump dba.stackexchange.com pro dotazy SEDE~\cite{sede}; archiv 319~MB & archive.org, ověřeno MD5 & \texttt{SEDE\_DATASET=none} \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Databáze image \texttt{mssql\_db}. Vlastní kopii drží projekt jen u~FIBEN, jehož původní repozitář zmizel; ostatní sady zůstávají cizími zdroji build (rozh.~218). Překlad sám žádnou databázi nepotřebuje.}
 \label{tab:sady}
 \end{table}
@@ -329,11 +353,13 @@ Image nástroje vznikají ze dvou souborů \texttt{Dockerfile} a služby popisuj
 
 Pro běžný provoz stačí Docker; .NET SDK, JDK ani databáze na hostiteli být nemusí. Z~adresáře \texttt{ORMConvertor/}:
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Spuštění systému.}]
 git clone https://github.com/MiraStochel/orm-convertor.git
 cd orm-convertor/ORMConvertor
 docker compose up --build
 \end{lstlisting}
+\end{minipage}
 
 Příkaz spustí dvě služby bez profilu (obr.~\ref{fig:nasazeni}): aplikaci na \url{http://localhost:5072/orm/} a databázi na portu 1444 hostitele (\texttt{sa}/\texttt{Testingorms123}, jen pro vývoj; data na volume \texttt{mssql\_data}). První build stahuje base image (asi 1~GB) a datové sady (asi 0,9~GB) a na lince 50~Mb/s trvá asi deset minut. První start načítá sady asi čtvrt hodiny; aplikace přitom odpovídá hned a katalog nad WideWorldImporters čte po první minutě. Další starty už nenačítají nic. Že instance stojí, ukáže stránka \texttt{/orm/}, \path{GET /orm/required-content} (jazyky, které každý zdroj čte) a první průchod z~kap.~\ref{sec:tutorial} se stavem katalogu \emph{catalog read}. Server má dva režimy (tab.~\ref{tab:rezimy}). \texttt{docker compose stop} služby zastaví a data nechá, \texttt{down -v} odstraní i~volume s~databázemi.
 
@@ -362,26 +388,28 @@ Příkaz spustí dvě služby bez profilu (obr.~\ref{fig:nasazeni}): aplikaci na
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{3.7cm} Y Y}
+\begin{tabularx}{\textwidth}{L{4.6cm} Y L{5.2cm}}
 \toprule
 \textbf{Režim serveru} & \textbf{Nastavení} & \textbf{K~čemu} \\
 \midrule
 měřicí (výchozí; rozh.~145, 193) & databáze na procesorech 0--1, klienti na 2--3, paměť serveru 4096~MB, \texttt{MAXDOP}~1; virtuální stroj Dockeru se čtyřmi procesory a 12~GB bez swapu & opakovatelná měření; s~méně než čtyřmi procesory Docker službu odmítne \\
 soudce (\texttt{judge.env}; rozh.~164, 166) & všechny procesory, jednovláknové plány & souběžná čtení soudce LDBC \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Režimy databázového serveru.}
 \label{tab:rezimy}
 \end{table}
 
 \subsection{Běh bez Dockeru}\label{sec:bez-dockeru}
 
-Alternativa pro toho, kdo Docker nemá; překlad funguje všude, kde je .NET~10 SDK:
+Alternativa bez použití Dockeru; překlad funguje všude, kde je .NET~10 SDK:
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Spuštění z~.NET CLI.}]
 cd ORMConvertor
 dotnet run --configuration Release --launch-profile http --project ORMConvertorAPI/ORMConvertorAPI.csproj
 \end{lstlisting}
+\end{minipage}
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
 \item Bez katalogu (\path{ConnectionStrings:CatalogDatabase} v~\emph{user secrets}) nástroj překládá dál, jen s~konvencemi místo doplnění a se stavem \emph{catalog not configured}.
@@ -409,7 +437,7 @@ V~aplikaci není třeba běžně nic nastavovat. \texttt{docker compose up -{}-b
 \path{Parsing:MaxNestingDepth}, \path{Parsing:MaxQueryTextLength} & API & strop hloubky zanoření (128) a délky textu dotazu (1~048~576 znaků); vstup nad stropem je \emph{Failure} \\
 \path{ORMCONVERTOR_CATALOG_DATABASE} & compose & databáze, nad kterou instance čte katalog \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Klíče konfigurace provozu.}
 \label{tab:konfigurace}
 \end{table}
@@ -418,15 +446,17 @@ V~aplikaci není třeba běžně nic nastavovat. \texttt{docker compose up -{}-b
 
 Testovací sady jsou dvě a každou reprodukuje jeden příkaz na stroji, kde je jen Docker (S5); prostředí jim staví profil \texttt{test} (obr.~\ref{fig:nasazeni}, tab.~\ref{tab:testprofil}).
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Obě sady v~kontejnerech.}]
 docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_app_dry test_db
 docker compose --profile test run --rm tests         # .NET sada
 docker compose --profile test run --rm java_tests    # javovská sada
 \end{lstlisting}
+\end{minipage}
 
 \begin{table}[H]
 \centering\footnotesize
-\begin{tabularx}{\textwidth}{L{3.4cm} Y}
+\begin{tabularx}{\textwidth}{L{4cm} Y}
 \toprule
 \textbf{Služba} & \textbf{Role} \\
 \midrule
@@ -435,7 +465,7 @@ docker compose --profile test run --rm java_tests    # javovská sada
 \texttt{test\_app}, \texttt{\_ldbc}, \texttt{\_cases}, \texttt{\_dry} & čtyři instance nástroje (2~GB každá): katalog nad testovací databází, nad \texttt{LdbcSnb}, nad případovými studiemi a žádný \\
 \texttt{java\_tests} & javovská sada; 6~GB; bere artefakty z~instancí přes HTTP \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Služby profilu \texttt{test}.}
 \label{tab:testprofil}
 \end{table}
@@ -449,8 +479,7 @@ CI běží při změně \texttt{ORMConvertor/**} nebo workflow a má tři joby: 
 Experimenty běží \emph{na vyžádání}, za verzi nebo zásadní změnu, jako testy obou sad zapnuté proměnnou prostředí (tab.~\ref{tab:behy}). Jejich čísla jsou záznam verze v~\texttt{docs/runs/}, ne závazek; příkazy nese \path{ORMConvertor/README.md}, \emph{Tests}.
 
 {\footnotesize
-\begin{longtable}{P{0.14} P{0.40} P{0.31} P{0.15}}
-\caption{Běhy na vyžádání.}\label{tab:behy}\\
+\begin{longtable}{P{0.14} P{0.36} P{0.31} P{0.19}}
 \toprule
 \textbf{Běh} & \textbf{Co dělá} & \textbf{Test a proměnné} & \textbf{Doba} \\
 \midrule
@@ -459,20 +488,25 @@ Experimenty běží \emph{na vyžádání}, za verzi nebo zásadní změnu, jako
 \textbf{Běh} & \textbf{Co dělá} & \textbf{Test a proměnné} & \textbf{Doba} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Běhy na vyžádání.}\label{tab:behy}\\
 \endlastfoot
 soudce LDBC & přehraje validační sadu nad scale factorem 1 (138~747 řádků) a každé čtení každého frameworku srovná s~očekávanými řádky & \texttt{LdbcValidationTest}; \path{ORMCONVERTOR_LDBC_VALIDATION_ROWS} & 20--30~h na sadu \\
 běh FIBEN, běh SEDE & každý dotaz katalogu do všech cílů, srovnání řádků se zdrojem a u~FIBEN se soudcem, medián času & \texttt{FibenRunTest}, \texttt{SedeRunTest} & FIBEN 2,3~h a 3,1~h; SEDE 8~h a 14~h \\
 experimentální běh & tabulka T2 × T3 (kap.~\ref{sec:exp-navod}) & \texttt{ExperimentRunTest}; \path{ORMCONVERTOR_EXPERIMENT_RESULTS} & asi hodina \\
-běh mezí & syntetické řady podél jedné osy (joiny, zanoření, poddotazy, entity\ldots), čas a paměť překladu & \texttt{LimitSearchTest}; \path{ORMCONVERTOR_SERIES_AXES} & .NET 14~h, Java 32~h \\
+běh mezí & syntetické řady v jedné ose (joiny, zanoření, poddotazy, entity\ldots), čas a paměť překladu & \texttt{LimitSearchTest}; \path{ORMCONVERTOR_SERIES_AXES} & .NET 14~h, Java 32~h \\
 celý vstup & všechny vstupy sloučené do jednoho projektu na framework, jen čas & \texttt{WholeInputTest} & minuty \\
 cizí artefakty & překlad od modelu nebo od člověka projde stupni ověření & \texttt{foreign-run.sh} & podle počtu \\
 srovnání s~LLM & protokol o~sedmi krocích (tab.~\ref{tab:protokol}) & \path{ORMCONVERTOR_LLM_RUN} & hodiny až den \\
 \end{longtable}}
 
-Dlouhý běh se spouští odpojeně, pojmenovaně a bez \texttt{-{}-rm}; jeho soubory zůstávají mimo git a do repozitáře jde jen záznam. Běh, který měří čas, chce na hostiteli vypnuté turbo a pozastavené aktualizace Windows.
+Dlouhý běh se spouští odpojeně, pojmenovaně a bez \texttt{-{}-rm}; jeho soubory zůstávají mimo git a do repozitáře jde jen záznam. Běh, který měří čas, chce na hostiteli vypnuté dynamické navýšení frekvence procesoru a zajištění běhu počítače (pozastavené aktualizace Windows).
 
 Všechny běhy mají stejnou stavbu: proměnná zapne případ a adresář dostane soubory běhu. Běhy FIBEN a SEDE řídí proměnné \path{ORMCONVERTOR_FIBEN_*} a \path{ORMCONVERTOR_SEDE_*}: \texttt{\_RESULTS} jmenuje adresář běhu, \texttt{\_QUERIES} vybere dotazy pro kontrolu a \texttt{\_MEASURE=0} vypne měření času. U~soudce LDBC dává \path{ORMCONVERTOR_LDBC_VALIDATION_ROWS} prefix validační sady (prázdná hodnota celou sadu), u~běhu mezí vybírá \path{ORMCONVERTOR_SERIES_AXES} osy a \path{ORMCONVERTOR_SERIES_CATALOG=none} dává dry run. Kontrola z~hostitele se nezapisuje, záznam vzniká jen z~běhu v~zafixovaném prostředí; jedinou výjimkou je kontrola, která změnila vstupy experimentu (tab.~\ref{tab:nepovedlo}).
+
+\pagebreak
 
 \subsection{Možné problémy při nasazení}\label{sec:problemy}
 
@@ -480,7 +514,6 @@ Tab.~\ref{tab:problemy} shrnuje potíže, které jsme při nasazení a při běz
 
 {\footnotesize
 \begin{longtable}{P{0.20} P{0.42} P{0.38}}
-\caption{Potíže při nasazení, které jsme potkali nebo je předvídáme.}\label{tab:problemy}\\
 \toprule
 \textbf{Potíž} & \textbf{Projev} & \textbf{Náprava} \\
 \midrule
@@ -489,7 +522,10 @@ Tab.~\ref{tab:problemy} shrnuje potíže, které jsme při nasazení a při běz
 \textbf{Potíž} & \textbf{Projev} & \textbf{Náprava} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Potíže při nasazení, které jsme potkali nebo je předvídáme.}\label{tab:problemy}\\
 \endlastfoot
 \texttt{run} bez \texttt{build} & sada běží nad stromem, z~něhož image vznikl, a je zelená; počet testů nesedí na záznam velikosti sady & vždy dvojice \texttt{build} + \texttt{run}; u~dlouhého běhu je to nejdražší past, protože den měření stojí nad starým kódem \\
 paměť hostitele & systém (aplikace, SQL Server) a profil \texttt{test} (druhý SQL Server, čtyři instance po 2~GB, sada 6~GB) najednou přesáhnou 12~GB virtuálního stroje i 16~GB hostitele; proces hostitele je ukončen pro nedostatek paměti & před profilem \texttt{test} zastavit systém (\path{docker compose stop ormconvertor mssql_db}), odstranit zbylé kontejnery profilu, nespouštět hostitelský \texttt{dotnet test} vedle build image; součet mezí všeho, co běží současně, se musí vejít do stroje (rozh.~193) \\
@@ -500,14 +536,16 @@ zdroj Dapper nebo MyBatis bez katalogu & entita vyjde bez klíče (EF~Core jako 
 katalog nad jinou databází, než jakou vstup popisuje & záznam \emph{Incompleteness} \uv{No table matching the entity was found in the catalog}; u~javovské sady selhání diferenčních testů, protože instance překládala s~katalogem nad vzorovou databází místo testovací & \path{ORMCONVERTOR_CATALOG_DATABASE} u~compose, \path{ConnectionStrings__CatalogDatabase} u~hostitelské instance \\
 port 1444 obsazený & zděděné benchmarky i \texttt{mssql\_db} publikují port 1444 & spustit jen jedno z~nich \\
 režim soudce & \texttt{up} závislé služby bez \texttt{judge.env} databázi znovu vytvoří v~měřicím režimu a přeruší běžící přehrání (stalo se 24.~10.~2026 po 29~h, tab.~\ref{tab:nepovedlo}) & \path{--env-file judge.env} na každém příkazu compose, který se databáze dotkne; skript, který běh ukončuje, se databáze dotkne, až sám přečte kontejner běhu jako \texttt{exited} \\
-konce řádků & \texttt{database/init-db.sh} a loadery běží v~linuxovém kontejneru, kde skript s~CRLF skončí hláškou \emph{bad interpreter} & \texttt{.gitattributes} drží \texttt{*.sh} na LF a \texttt{database.Dockerfile} konce řádků při kopírování normalizuje; po ručním zásahu ověřit \texttt{git ls-files -{}-eol} \\
+konce řádků & \texttt{database/init-db.sh} a loadery běží v~linuxovém kontejneru, kde skript s~CRLF skončí hláškou \emph{bad interpreter} & \texttt{.gitattributes} drží \texttt{*.sh} na LF a \texttt{database.Dockerfile} konce řádků při kopírování normalizuje \\
 nový projekt v~solution, posun verze balíčku & build image selže: stage \texttt{dotnet-build} kopíruje každý \texttt{.csproj} a jeho lock file jménem a restore běží v~\texttt{-{}-locked-mode} & přidat projekt do seznamu v~\texttt{Dockerfile}; po hostitelském \texttt{dotnet restore} commitnout \path{packages.lock.json} \\
 Advisor mimo Linux & bez \texttt{libadvisor.so} vrací \texttt{/advisor-test} odpověď 400 s~chybou načtení knihovny; překlad běží & spustit v~kontejneru; Windows build knihovny neexistuje \\
 dlouhý běh přes noc & Windows Update restartuje stroj kolem čtvrté ráno, po restartu nikdo není přihlášený a Docker Desktop neběží; uspání a hibernace běh přeruší také & pozastavit aktualizace přes očekávaný konec běhu, vypnout uspání; po měřeném běhu vrátit stav procesoru (99~\% pro měření) na výchozí \\
 databáze, která se nenačetla & loader skončí u~otázky, na kterou server neodpoví, a nechá databázi, jak byla; vlastnost \texttt{*.dataset} pak chybí nebo jmenuje jiný archiv a příští start načítá znovu; hláška je v~logu \texttt{mssql\_db} & podle hlášky loaderu (místo na disku, stažený archiv) \\
 příkazy z~Git Bash & cesty \texttt{/app/\ldots} v~argumentech \texttt{-e} se přepíší na windowsovské a soubory běhu přistanou v~adresáři toho jména & předpona \path{MSYS_NO_PATHCONV=1} \\
-datová sada není k~mání & build image databáze skončí hláškou \emph{No FIBEN data set of commit \ldots; FIBEN\_DATASET=none builds the image without Fiben} (obdobně pro LDBC a jeho validační sadu, dump SEDE a zálohu WideWorldImporters), nebo hláškou, že soubor není archiv, který jmenuje \texttt{datasets.sha256}, když pod stejným jménem přišel jiný obsah & přepínač, který hláška jmenuje, postaví image bez té databáze; \texttt{-{}-build-arg DATASETS\_URL=\ldots} ukáže na jiné místo vlastních kopií. Tag \texttt{2.3.0} a \texttt{2.4.0} berou FIBEN ze zmizelého repozitáře a bez \texttt{FIBEN\_DATASET=none} v~čistém prostředí neprojdou \\
+datová sada není k~dispozici & build image databáze skončí hláškou \emph{No FIBEN data set of commit \ldots; FIBEN\_DATASET=none builds the image without Fiben} (obdobně pro LDBC a jeho validační sadu, dump SEDE a zálohu WideWorldImporters), nebo hláškou, že soubor není archiv, který jmenuje \texttt{datasets.sha256}, když pod stejným jménem přišel jiný obsah & přepínač, který hláška jmenuje, postaví image bez té databáze; \texttt{-{}-build-arg DATASETS\_URL=\ldots} ukáže na jiné místo vlastních kopií. Tag \texttt{2.4.0} bere FIBEN ze zmizelého repozitáře a bez \texttt{FIBEN\_DATASET=none} v~čistém prostředí neprojde \\
 \end{longtable}}
+
+\pagebreak
 
 \section{Použití}\label{sec:pouziti}
 
@@ -527,7 +565,7 @@ Pro seznámení stačí jeden převod, který projde celý a bez chyby: příkla
 4. Přečíst výsledek & shora dolů & hlavička se stavem \emph{catalog read}; entity EF~Core s~atributy, které vstup neměl, a dotaz v~LINQ (obr.~\ref{fig:tutorial}); pás \emph{Facts}: 27 faktů, všechny \emph{carried} (obr.~\ref{fig:fakta}); pás \emph{Records}: 27 \emph{Supplied}, 4 \emph{Incompleteness}, 2 \emph{Convention}, žádný \emph{Failure} (obr.~\ref{fig:zaznamy}) \\
 5. Odnést výstup & \emph{Download all as ZIP} & -- \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{První průchod aplikací; úplný vstup a výstup je příklad~1 v~kap.~\ref{sec:priklady}.}
 \label{tab:pruchod}
 \end{table}
@@ -562,7 +600,7 @@ výstup: \textbf{artefakty} & entita cíle, mapovací dokument tam, kde ho cíl 
 \textbf{kniha tvrzení} (\emph{Facts}) & za každý mapovací fakt řádek s~hodnotou, původem (zdroj, katalog, odvozeno) a osudem (nesen, vypuštěn, negenerován) a s~pozicí ve vstupu i výstupu, kterou obrazovka podtrhne (obr.~\ref{fig:kniha-tvrzeni}) \\
 zůstává uživateli & aplikační kód okolo, připojení do databáze a vše, co z~artefaktů dělá spustitelný projekt (rozh.~029, 040) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Vstup a výstup převodu.}
 \label{tab:vstup-vystup}
 \end{table}
@@ -584,7 +622,7 @@ Převod je deterministický (S2): týž vstup nad týmž katalogem a touž verz�
 \emph{Fallback} & dotaz vyšel celý nativním SQL, protože jazyk cíle konstrukci nevysloví (rozh.~113) \\
 \emph{Omitted} & tvar LINQ, který provider NHibernatu nevysloví; závazné HQL stojí samo \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Druhy diagnostických záznamů v~pořadí, v~jakém je dobré je číst.}
 \label{tab:zaznamy}
 \end{table}
@@ -611,7 +649,7 @@ stránka \emph{Examples} & pipeline převodu a živé příklady po skupinách (
 stránky \emph{LDBC}, \emph{FIBEN}, \emph{SEDE} & katalog referenčních dotazů se stavem každého dotazu v~každém cíli (obr.~\ref{fig:katalog}) \\
 stránka \emph{Advisor} & srovnání změřených kandidátů pro zátěž dotazů; měří jen Dapper a EF~Core a je vyňatý ze záruk \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Oddíly překladové obrazovky a ostatní stránky.}
 \label{tab:obrazovka}
 \end{table}
@@ -648,7 +686,7 @@ Hibernate & anotace \texttt{jakarta.persistence} (i~\texttt{orm.xml}), profil Hi
 EclipseLink & totéž, profil EclipseLinku & JPQL, nativní SQL v~kódu & JPQL \\
 MyBatis & doménová třída + \texttt{<resultMap>} & dokument mapperu (SQL), \texttt{@Select} na rozhraní & dokument mapperu a metoda rozhraní mapperu \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Co každý framework čte a píše.}
 \label{tab:frameworky}
 \end{table}
@@ -669,7 +707,7 @@ skládání dotazů & množinové operace, \texttt{WITH}, odvozená tabulka, rek
 \midrule
 mapování & složené primární klíče se strategií generování pro každou část (rozh.~006), vícesloupcové cizí klíče, vztahy 1:1, 1:N a N:M -- ten jako explicitní spojovací entita (rozh.~005) --, unikátní omezení, verze \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Co mezireprezentace nese: slovník dotazů a mapování.}
 \label{tab:slovnik}
 \end{table}
@@ -688,7 +726,7 @@ hodnota \texttt{CHAR(n)} & předá ji doplněnou mezerami, jak ji vrací SQL Ser
 \texttt{@Version} nad \texttt{byte[]} & přijímá & odmítá & do EclipseLinku píše sloupec jen pro čtení bez \texttt{@Version} (rozh.~179) \\
 plný vnější join & vysloví & nevysloví & do EclipseLinku píše dotaz nativním SQL (rozh.~180) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Kde se profily Hibernate a EclipseLink liší.}
 \label{tab:profily}
 \end{table}
@@ -728,14 +766,13 @@ dědičnost, komponenty a spojené tabulky (\texttt{<subclass>}, \texttt{@Embedd
 jiný dialekt než SQL Server 2022 & jediný dialekt nástroje \\
 experimenty nad rámec T1--T3 & LLM experimenty T4--T6 a T7 s~Advisorem \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Vyňaté oblasti.}
 \label{tab:vynate}
 \end{table}
 
 {\footnotesize
 \begin{longtable}{P{0.33} P{0.37} P{0.30}}
-\caption{Nejčastější meze a jejich projev.}\label{tab:limity}\\
 \toprule
 \textbf{Konstrukce} & \textbf{Proč} & \textbf{Projev} \\
 \midrule
@@ -744,7 +781,10 @@ experimenty nad rámec T1--T3 & LLM experimenty T4--T6 a T7 s~Advisorem \\
 \textbf{Konstrukce} & \textbf{Proč} & \textbf{Projev} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Nejčastější meze a jejich projev.}\label{tab:limity}\\
 \endlastfoot
 dynamický příkaz MyBatisu (\texttt{<if>}, \texttt{<choose>}) & je to rodina dotazů, ne jeden dotaz & \emph{Failure} \\
 \texttt{fetch = LAZY} na referenci v~EclipseLinku & bez weavingu načte EclipseLink referenci hned & \emph{Loss} \\
@@ -769,7 +809,6 @@ Nejčastější chyby ve vstupech, to, co po nich převod udělá, a jejich náp
 
 {\footnotesize
 \begin{longtable}{P{0.33} P{0.37} P{0.30}}
-\caption{Časté chyby ve vstupech.}\label{tab:chyby-vstup}\\
 \toprule
 \textbf{Chyba vstupu} & \textbf{Co se stane} & \textbf{Náprava} \\
 \midrule
@@ -778,7 +817,10 @@ Nejčastější chyby ve vstupech, to, co po nich převod udělá, a jejich náp
 \textbf{Chyba vstupu} & \textbf{Co se stane} & \textbf{Náprava} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Časté chyby ve vstupech.}\label{tab:chyby-vstup}\\
 \endlastfoot
 jednotka v~jiném jazyce, než deklaruje & \emph{Failure} s~řádkem a sloupcem & jazyk podle přípony \\
 neúplná třída C\# & odmítnuta na první chybě (rozh.~128) & opravit zdroj \\
@@ -795,7 +837,6 @@ Nástroj nehádá: kde o~faktu nic neví, vydá méně a řekne to záznamem, ni
 
 {\footnotesize
 \begin{longtable}{P{0.27} P{0.50} P{0.23}}
-\caption{Jevy ve výstupu, jejich příčina a záznam, který je hlásí.}\label{tab:chyby-vypocet}\\
 \toprule
 \textbf{Jev} & \textbf{Proč} & \textbf{Záznam} \\
 \midrule
@@ -804,7 +845,10 @@ Nástroj nehádá: kde o~faktu nic neví, vydá méně a řekne to záznamem, ni
 \textbf{Jev} & \textbf{Proč} & \textbf{Záznam} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Jevy ve výstupu, jejich příčina a záznam, který je hlásí.}\label{tab:chyby-vypocet}\\
 \endlastfoot
 výstup říká víc než vstup & fakta dodal katalog; bez něj vyjde entita \texttt{[Keyless]} bez atributů & \emph{Supplied} \\
 klíč bez strategie generování & katalog neřekne, jakým mechanismem se sloupec plní (rozh.~064); cíl použije svou konvenci & \emph{Incompleteness} a \emph{Convention} \\
@@ -833,7 +877,7 @@ Všechny tři příklady (tab.~\ref{tab:priklady}) jsou v~nástroji k~načtení 
 2: EF~Core → Hibernate & čtyři entity a šest dotazů v~LINQ & čtyři entity Javy, ke každému dotazu metoda i holé JPQL & 9 \\
 3: EclipseLink → EF~Core & deset entit JPA a jeden dotaz v~JPQL se sedmi joiny a čtrnácti poddotazy & jedenáct entit (jedna syntetizovaná spojovací) a dotaz v~LINQ & 29 \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Tři příklady.}
 \label{tab:priklady}
 \end{table}
@@ -908,7 +952,7 @@ public static IQueryable Query(DbContext ctx)
 \emph{Incompleteness} (4) & strategie generování klíče, kterou katalog nezná (rozh.~064); cizí klíče katalogu, k~nimž entity nemají navigační vlastnost \\
 \emph{Convention} (2) & EF~Core generuje celočíselný klíč sám, výstup strategii nevyslovuje \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Záznamy příkladu 1. Bez katalogu vyjdou dvě entity \texttt{[Keyless]} a tři záznamy; do NHibernatu, Hibernatu a EclipseLinku by pak entity nevyšly vůbec, protože klíč vyžadují.}
 \label{tab:ex1}
 \end{table}
@@ -966,7 +1010,8 @@ public class OrderLine {
     @Column(name = "UnitPrice", precision = 18, scale = 2, nullable = false) private BigDecimal UnitPrice;
     @Column(name = "DiscountPercent", precision = 5, scale = 2, nullable = false) private BigDecimal DiscountPercent;
     @ManyToOne(optional = false)
-    @JoinColumn(name = "SalesOrderId", referencedColumnName = "SalesOrderId", nullable = false, insertable = false, updatable = false)
+    @JoinColumn(name = "SalesOrderId", referencedColumnName = "SalesOrderId", nullable = false,
+                insertable = false, updatable = false)
     private SalesOrder Order;
     @ManyToOne(optional = false)
     @JoinColumn(name = "ProductId", referencedColumnName = "ProductId", nullable = false)
@@ -979,7 +1024,8 @@ public class OrderLine {
     }
 }
 
-public static TypedQuery<SalesOrder> query(EntityManager em, int customerId, LocalDateTime placedAfter, int skip, int take) {
+public static TypedQuery<SalesOrder> query(EntityManager em, int customerId, LocalDateTime placedAfter,
+                                           int skip, int take) {
     return em.createQuery("""
         select o
         from SalesOrder o
@@ -1022,7 +1068,7 @@ cizí klíč, který je zároveň částí klíče & \texttt{@JoinColumn(inserta
 \emph{Incompleteness} (4) & katalog instance (WideWorldImporters) schéma \texttt{Ordering} nemá; není to chyba \\
 \emph{Convention} (3) & dvakrát \texttt{IDENTITY} místo \texttt{Auto} (rozh.~187); jméno klíčové třídy \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Příklad 2: co se při převodu stalo a záznamy.}
 \label{tab:ex2}
 \end{table}
@@ -1055,13 +1101,16 @@ return em.createQuery("""
           and cat.CategoryId in (select leaf.CategoryId from Category leaf
                 where leaf.ParentCategoryId in (select branch.CategoryId from Category branch
                       where branch.ParentCategoryId is null and exists (select p2.ProductId from Product p2
-                            where p2.CategoryId = leaf.CategoryId and p2.ListPrice > (select avg(p3.ListPrice) from Product p3
+                            where p2.CategoryId = leaf.CategoryId and p2.ListPrice > (select avg(p3.ListPrice)
+                                  from Product p3
                                   where p3.SupplierId in (select s2.SupplierId from Supplier s2
                                         where s2.RegionId = c.RegionId and s2.Rating >= 4)))))
           and ...
           and not exists (select rf2.RefundId from Refund rf2 join SalesOrder o2 on o2.OrderId = rf2.OrderId
-                where o2.CustomerId = c.CustomerId and rf2.Amount > (select max(ol2.UnitPrice) from OrderLine ol2 where ol2.OrderId = o2.OrderId))
-          and ol.UnitPrice > any (select p4.ListPrice from Product p4 where p4.CategoryId = p.CategoryId and p4.Discontinued = true)
+                where o2.CustomerId = c.CustomerId and rf2.Amount > (select max(ol2.UnitPrice) from OrderLine ol2
+                      where ol2.OrderId = o2.OrderId))
+          and ol.UnitPrice > any (select p4.ListPrice from Product p4
+                where p4.CategoryId = p.CategoryId and p4.Discontinued = true)
         group by r.Name, c.CustomerId, c.DisplayName
         having sum(ol.Quantity * ol.UnitPrice) > :minRevenue and count(distinct o.OrderId) >= :minOrders
            and avg(ol.UnitPrice) >= (select avg(p5.ListPrice) from Product p5 where ...)
@@ -1098,8 +1147,10 @@ public static IQueryable Query(DbContext ctx, DateTime fromDate, DateTime toDate
         .Select(g => new { Region = g.Key.Name, CustomerId = g.Key.CustomerId, Customer = g.Key.DisplayName,
             Orders = g.Select(t => t.o.OrderId).Distinct().Count(), Lines = g.Count(), ...,
             GrossRevenue = g.Sum(t => t.ol.Quantity * t.ol.UnitPrice),
-            DiscountGiven = (g.Count(t => (t.ol.Discount == null ? 0 : t.ol.Quantity * t.ol.UnitPrice * t.ol.Discount) != null) > 0
-                ? (decimal?)g.Sum(t => (t.ol.Discount == null ? 0 : t.ol.Quantity * t.ol.UnitPrice * t.ol.Discount)) : null),
+            DiscountGiven = (g.Count(t => (t.ol.Discount == null ? 0
+                    : t.ol.Quantity * t.ol.UnitPrice * t.ol.Discount) != null) > 0
+                ? (decimal?)g.Sum(t => (t.ol.Discount == null ? 0
+                    : t.ol.Quantity * t.ol.UnitPrice * t.ol.Discount)) : null),
             Refunded = g.Sum(t => t.rf.Amount), ...,
             ReviewsWritten = ctx.Set<Review>().Where(rv3 => rv3.CustomerId == g.Key.CustomerId).Count() })
         .OrderByDescending(p => p.GrossRevenue).ThenBy(p => p.Region).ThenBy(p => p.CustomerId)
@@ -1126,7 +1177,7 @@ joiny & řetěz \texttt{Join} s~anonymními typy, \texttt{LeftJoin} nad dvojicí
 \emph{Loss} (13) & inicializátory kolekcí, \texttt{CHAR(2)} sloupec, verze, strategie klíčů, které EF~Core anotacemi nevyjádří \\
 \emph{Convention} (6) & klíče, které EF~Core generuje sám; třída \texttt{SalesDashboard}, která do výstupu nejde; spojovací entita; \texttt{between} \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Příklad 3: překlad konstrukcí dotazu a záznamy. Kniha tvrzení má 186 řádků, 178 nesených a 8 vypuštěných.}
 \label{tab:ex3}
 \end{table}
@@ -1147,7 +1198,7 @@ Experimenty pracují nad pěti druhy vstupů (tab.~\ref{tab:vstupy}), které si 
 \texttt{ldbc:} & 41 & čtecí dotazy LDBC SNB & validační sada LDBC (soudce LDBC, zvlášť) \\
 \texttt{fiben:} & 237 & dotazy FIBEN s~otázkou v~přirozeném jazyce & soudce z~prvního doloženého běhu (regresní) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Vstupy experimentů a jejich počet v~experimentálním běhu za release 2.3.0 (celkem 624). Katalog SEDE (1~714 dotazů) běží jen vlastním během.}
 \label{tab:vstupy}
 \end{table}
@@ -1180,12 +1231,14 @@ Experimenty pracují nad pěti druhy vstupů (tab.~\ref{tab:vstupy}), které si 
 
 \paragraph{Experimentální běh (T2 × T3)} má tři kroky: na hostiteli s~oběma toolchainy a testovací databází (výpis~\ref{lst:exp-host}), nebo v~kontejnerech (výpis~\ref{lst:exp-beh}, zkrácený o~druh \texttt{fiben}). .NET půlka vypíše vstupy, přeloží každý do šesti cílů, tři .NET cíle prožene stupni ověření a změří úplnost přenesených mapovacích faktů (rozh.~173, 188); javovská půlka soudí tři javovské cíle; souhrn spočítá podíly po dvojicích ekosystémů, směrech, kategoriích a druzích vstupu. Žádný řádek běh neshodí: odmítnutí i červený stupeň jsou řádky; shodí ho jen vada běhu samého -- vstup, pro který běh nemá měřítko, nebo nenakonfigurovaná databáze jeho druhu.
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Experimentální běh na hostiteli.},label={lst:exp-host}]
 export ORMCONVERTOR_EXPERIMENT_RESULTS=<adresář běhu>
 dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.ExperimentRunTest"
 (cd JavaTests && mvn -B test -Dtest=ExperimentRunTest)   # ORMCONVERTOR_API_URL: instance nad testovací databází
 dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~ExperimentSummaryTest"
 \end{lstlisting}
+\end{minipage}
 
 \path{ORMCONVERTOR_EXPERIMENT_KINDS} omezí druhy vstupů (\texttt{matrix,cross,example,ldbc,fiben}). Klíče \texttt{fiben:} potřebují \path{ConnectionStrings:FibenDatabase} a pro Javu nastavení běhu FIBEN s~instancí, jejíž katalog je nad \texttt{Fiben}; případové studie potřebují databázi \texttt{ORMConvertorCaseStudies} a pro Javu instanci nad ní (\path{ORMCONVERTOR_CASESTUDY_API_URL}).
 
@@ -1193,7 +1246,6 @@ dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedN
 
 {\footnotesize
 \begin{longtable}{P{0.14} P{0.86}}
-\caption{Kroky protokolu srovnání s~jazykovým modelem.}\label{tab:protokol}\\
 \toprule
 \textbf{Krok} & \textbf{Co vznikne} \\
 \midrule
@@ -1202,7 +1254,10 @@ dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedN
 \textbf{Krok} & \textbf{Co vznikne} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Kroky protokolu srovnání s~jazykovým modelem.}\label{tab:protokol}\\
 \endlastfoot
 1. Buňky & \texttt{cells.tsv}: vstup, zdroj, cíl a varianta -- \texttt{zero-shot}, \texttt{few-shot} (tři ručně přeložené příklady) nebo \texttt{schema} (s~DDL katalogu); ve výchozím nastavení tři pokusy na buňku \\
 2. Prompty & \texttt{prompt.md} na pokus; ukládá modelu pravidla: bez webu, bez nástrojů, odpověď jako celé soubory a závěrečná zpráva \\
@@ -1255,7 +1310,7 @@ z~toho mimo svůj běh přeskakuje & 13~737 a 13~661, převážně případy bě
 2.4.0 & 11.~11. & čtvrtá doména SEDE, výuková stránka, záznamy silných modelů, opravy vad nalezených katalogem SEDE \\
 \Vydani & 14.~11. & odevzdávaný release: archiv FIBEN z~vlastní kopie projektu, přepínač pro každou datovou sadu, úpravy frontendu, opravy z~revize 13.~11. \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Release projektu.}
 \label{tab:vydani}
 \end{table}
@@ -1275,7 +1330,6 @@ Tab.~\ref{tab:zajimavosti} vybírá rozhodnutí, která tvar nástroje určila n
 
 {\footnotesize
 \begin{longtable}{P{0.20} P{0.66} P{0.14}}
-\caption{Výběr rozhodnutí a toho, co se při implementaci ukázalo.}\label{tab:zajimavosti}\\
 \toprule
 \textbf{Téma} & \textbf{Co jsme rozhodli a proč} & \textbf{Rozh.} \\
 \midrule
@@ -1284,7 +1338,10 @@ Tab.~\ref{tab:zajimavosti} vybírá rozhodnutí, která tvar nástroje určila n
 \textbf{Téma} & \textbf{Co jsme rozhodli a proč} & \textbf{Rozh.} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Výběr rozhodnutí a toho, co se při implementaci ukázalo.}\label{tab:zajimavosti}\\
 \endlastfoot
 Fakta o~frameworku se měří, než se o~nich rozhodne & Pravidlo vzniklo z~chyby: nezměřené tvrzení o~provideru NHibernatu vedlo k~vnitřnímu joinu, který potichu zahazoval řádky. Od té doby každé rozhodnutí o~chování frameworku cituje test, který ho měří proti připnuté verzi, a test zůstává vedle kódu, aby upgrade, který fakt změní, selhal tam & 148, 151 \\
 Mezireprezentace nese jen to, co frameworky sdílejí & Vztah leží na entitě a entity na sebe ukazují jménem. Složený klíč je seřazený seznam částí, takže \texttt{@EmbeddedId}, \texttt{<composite-id>} i \texttt{[PrimaryKey]} jsou formy téhož; N:M je explicitní spojovací entita. Model nevaliduje, validace patří builderu cíle. Podmínka dotazu je strom & 001, 002, 005, 006 \\
@@ -1303,12 +1360,14 @@ Prostředí připnuté na obsah & Lock file u~každého projektu, base image dig
 
 \paragraph{Vnitřní join, který zahazoval řádky (rozh.~148, 151).} Navigace přes referenci v~operandu LINQ, například \texttt{o.Customer.CustomerName}, je join, který v~textu dotazu nestojí: provider ho odvodí z~mapování, a jakého je druhu, se z~textu nepozná. Rozh.~148 svěřilo druh joinu provideru a o~NHibernatu řeklo, že navigaci překládá na implicitní join HQL, tedy vnitřní; na témže tvrzení zamítlo variantu \emph{levý join vždy}. Tvrzení pocházelo z~četby, ne z~měření. Audit z~18.~10. ho změřil proti připnuté verzi a neplatí: NHibernate 5.7.0 vytvoří každý takový join jako vnější a na vnitřní ho zúží jen ve filtru, který \texttt{NULL} splnit nemůže (výpis~\ref{lst:join-148}).
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language={[Sharp]C},caption={Navigace přes volitelnou referenci: co vrací zdroj a co z~něj dělalo čtení podle rozh.~148.},label={lst:join-148}]
 session.Query<Order>().Select(o => o.Customer.CustomerName)
 
 // NHibernate 5.7.0:        ... left outer join Customers ...  objednávka bez zákazníka má NULL
 // čtení podle rozh. 148:   vnitřní join                       objednávka bez zákazníka chybí
 \end{lstlisting}
+\end{minipage}
 
 Poučné je, proč vada nebyla vidět. Dotaz se přeložil, zkompiloval, cíl ho přijal a běžel; lišil se až počet řádků, a jen nad daty, v~nichž některá reference chybí. Je to přesně třída selhání, kterou nástroj zakazuje nejpřísněji (dotaz, který by vrátil jiné řádky, se nevydá), a přesto prošla, protože pravidlo hlídá to, co nástroj o~frameworku ví, ne to, co se o~něm domnívá. Totéž měření ukázalo druhou vadu, společnou oběma providerům: v~řetězu \texttt{o.Customer.Region.RegionName} nad volitelným zákazníkem a povinným regionem vznikal levý join následovaný vnitřním, a vnitřní vypustil právě ty objednávky, které levý před ním zachoval. Rozh.~151 proto dává jediné pravidlo pro EF~Core i NHibernate: join je levý, smí-li řádek reference chybět, a volitelnost se nese po celém řetězu. Fakt obou providerů od té doby drží testy, které čtou jejich vlastní SQL (\texttt{NHibernateLinqProviderTest}, \texttt{EFCoreNavigationJoinProviderTest}), a z~případu vzniklo pracovní pravidlo prvního řádku tabulky.
 
@@ -1330,7 +1389,6 @@ Co se nepovedlo napoprvé, proč a jak jsme to napravili, shrnuje tab.~\ref{tab:
 
 {\footnotesize
 \begin{longtable}{P{0.24} P{0.40} P{0.36}}
-\caption{Co se nepovedlo napoprvé.}\label{tab:nepovedlo}\\
 \toprule
 \textbf{Co se stalo} & \textbf{Příčina} & \textbf{Náprava} \\
 \midrule
@@ -1339,7 +1397,10 @@ Co se nepovedlo napoprvé, proč a jak jsme to napravili, shrnuje tab.~\ref{tab:
 \textbf{Co se stalo} & \textbf{Příčina} & \textbf{Náprava} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Co se nepovedlo napoprvé.}\label{tab:nepovedlo}\\
 \endlastfoot
 vnitřní join místo levého (rozh.~148) & nezměřené tvrzení o~provideru; vadu našel audit, ne test & rozh.~151 a testy faktu obou providerů \\
 soudce LDBC přerušený po 29~h (24.~10.) & navazující skript znovu vytvořil databázi pod běžícím soudcem & skript se databáze dotkne, až sám přečte kontejner běhu jako \texttt{exited} \\
@@ -1372,7 +1433,6 @@ Tab.~\ref{tab:odchylky} uvádí, kde se výsledek liší od specifikace, a důvo
 
 {\footnotesize
 \begin{longtable}{P{0.30} P{0.30} P{0.40}}
-\caption{Odchylky od specifikace.}\label{tab:odchylky}\\
 \toprule
 \textbf{Specifikace} & \textbf{Výsledek} & \textbf{Důvod} \\
 \midrule
@@ -1381,7 +1441,10 @@ Tab.~\ref{tab:odchylky} uvádí, kde se výsledek liší od specifikace, a důvo
 \textbf{Specifikace} & \textbf{Výsledek} & \textbf{Důvod} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Odchylky od specifikace.}\label{tab:odchylky}\\
 \endlastfoot
 zobrazení mezireprezentace (F14) & nezobrazuje se & kniha tvrzení a záznamy říkají totéž slovy vstupu a výstupu (rozh.~154) \\
 obrazovka s~pěti očíslovanými kroky & oddíly bez čísel, vstup vedle výstupu (rozh.~137) & scénář S7 zůstává pod pěti kroky \\
@@ -1506,7 +1569,7 @@ celý vstup: 604--607 tehdejších vstupů (30.~10.) v~jednom projektu na framew
 S3: projekt o~100 entitách a 100 dotazech & 0,2--0,7~s bez katalogu, 0,4--0,5~s s~katalogem \\
 F4: správně přečtená metadata testovací databáze & 462 z~462 \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Běhy katalogů, meze a výkon překladu.}
 \label{tab:meze}
 \end{table}
@@ -1542,10 +1605,11 @@ Pilotní model je nejsilnější model s~otevřenými váhami, který se vejde n
 5.~11. & Claude Fable 5.1 & \texttt{api} & tytéž buňky a prompty jako 3.~11.; 78 pokusů, 61,5~min, 21,68~USD účtovaných \\
 6.~11. & Claude Opus 5.5 & \texttt{code} & 43 buněk ve třech sadách, obě varianty; 258 pokusů, dvě pětihodinová okna předplatného, cena podle ceníku 111,53~USD \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Zaznamenané běhy srovnání s~jazykovým modelem.}
 \label{tab:llm-behy}
 \end{table}
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Nasazení lokálního modelu pro kanál \texttt{api}.}]
 sha256sum <models>/Qwen3.5-9B-Q4_K_M.gguf
 docker pull ghcr.io/ggml-org/llama.cpp:server
@@ -1555,6 +1619,7 @@ MSYS_NO_PATHCONV=1 docker run -d --name llm_server -p 8080:8080 -v "<models>:/mo
   -c 16384 -t 4 --load-mode none --temp 0 --seed 1 --reasoning off
 curl -s http://localhost:8080/health          # {"status":"ok"} po načtení, asi minuta
 \end{lstlisting}
+\end{minipage}
 
 Tab.~\ref{tab:llm-vysledky} staví vedle sebe podíl po pokusech a best-of-n. Nástroj dosáhl nejvyššího měřítka ve všech 13 buňkách prvních tří běhů a ve 40 ze 43 čtvrtého. Co z~čísel plyne, shrnuje tab.~\ref{tab:llm-zjisteni}.
 
@@ -1589,15 +1654,16 @@ silný model přeloží obsah, ale ne fakta, která nezná & u~Fable 5.1 projde 
 nad složitějšími vstupy rozdíl roste & Opus 5.5 padá na faktech frameworku, která nástroj měří (\texttt{CASE} v~\texttt{ELSE} do EclipseLinku ve všech šesti pokusech), a žádná případová studie nedojde ke čtvrtému stupni, protože prompt schéma projektu neříkal (uzavřelo rozh.~207) \\
 cena & 258 pokusů Opus 5.5 stojí podle ceníku 111,53~USD a pokus nad Cofoundry trvá 10--12 minut; nástroj přeloží projekt o~100 entitách a 100 dotazech pod sekundu (tab.~\ref{tab:meze}) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Co ze srovnání plyne. Varianty \texttt{schema}, \texttt{rag}, \texttt{repair} a \texttt{agent} jsou v~protokolu připravené, ale nezaznamenané: patří navazující diplomové práci.}
 \label{tab:llm-zjisteni}
 \end{table}
 
 \subsection{Reprodukce experimentů}\label{sec:reprodukce}
 
-Postup pro čtenáře, který má stroj s~Dockerem (tab.~\ref{tab:reprodukce}). Předpoklady: virtuální stroj Dockeru se čtyřmi procesory a 12~GB bez swapu, asi 30~GB místa, síť pro první build a čistý strom \texttt{git checkout \Vydani}. Příkazy se spouštějí z~\texttt{ORMConvertor/}; podrobnosti nese \path{ORMConvertor/README.md} a \path{docs/runs/README.md}, \emph{Metodika}.
+Postup pro čtenáře, který má stroj s~Dockerem (tab.~\ref{tab:reprodukce}). Předpoklady: virtuální stroj Dockeru se čtyřmi procesory a 12~GB bez swapu, asi 30~GB místa, síť pro první build a čistý klon repozitáře (kap.~\ref{sec:spusteni}). Příkazy se spouštějí z~\texttt{ORMConvertor/}; podrobnosti nese \path{ORMConvertor/README.md} a \path{docs/runs/README.md}, \emph{Metodika}.
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=bash,caption={Experimentální běh v~kontejnerech.},label={lst:exp-beh}]
 docker volume create exp
 docker compose --profile test run --rm -v exp:/results -e ORMCONVERTOR_EXPERIMENT_RESULTS=/results \
@@ -1608,10 +1674,10 @@ docker compose --profile test run --rm -v exp:/results -e ORMCONVERTOR_EXPERIMEN
 docker compose --profile test run --rm -v exp:/results -e ORMCONVERTOR_EXPERIMENT_RESULTS=/results \
   tests --filter "FullyQualifiedName~ExperimentSummaryTest"
 \end{lstlisting}
+\end{minipage}
 
 {\footnotesize
 \begin{longtable}{P{0.30} P{0.37} P{0.33}}
-\caption{Reprodukce krok za krokem.}\label{tab:reprodukce}\\
 \toprule
 \textbf{Krok} & \textbf{Výsledek} & \textbf{Typické chyby} \\
 \midrule
@@ -1620,10 +1686,13 @@ docker compose --profile test run --rm -v exp:/results -e ORMCONVERTOR_EXPERIMEN
 \textbf{Krok} & \textbf{Výsledek} & \textbf{Typické chyby} \\
 \midrule
 \endhead
+\rule{0pt}{26pt}\\
+\endfoot
 \bottomrule
+\caption{Reprodukce krok za krokem.}\label{tab:reprodukce}\\
 \endlastfoot
 \textbf{1. Systém}: \texttt{docker compose up -{}-build} & první průchod z~tab.~\ref{tab:pruchod} vrátí stav \emph{catalog read} a záznamy \emph{Supplied} & datová sada není k~mání; méně než čtyři procesory; obsazený port 1444 nebo 5072 \\
-\textbf{2. Obě sady}: \texttt{build} + \texttt{run} (kap.~\ref{sec:testy}); systém předtím zastavit & \texttt{Failed: 0} a \texttt{BUILD SUCCESS}; počet testů jako v~záznamu velikosti sady & proces ukončený pro nedostatek paměti; jiný počet testů: zastaralý image \\
+\textbf{2. Obě sady}: \texttt{build} + \texttt{run} (kap.~\ref{sec:testy}); systém předtím zastavit & \texttt{Failed: 0} a \texttt{BUILD SUCCESS}; počet testů ne nižší než v~záznamu velikosti sady, který patří tagu \texttt{\Vydani} & proces ukončený pro nedostatek paměti; nižší počet testů: zastaralý image \\
 \textbf{3. Experimentální běh} (výpis~\ref{lst:exp-beh}) & \texttt{summary.md} ve volume s~tabulkami ve sloupcích tab.~\ref{tab:t2t3}; výpis vynechává druh \texttt{fiben}, který potřebuje databázi \texttt{Fiben} (\emph{The experiment run} v~README), a dává proto 2~322 řádků místo 3~744 & případ přeskočený: proměnná nedošla do kontejneru \\
 \textbf{4. Běh FIBEN} (\emph{The FIBEN run} v~README): .NET půlka a po ní javovská, nikdy najednou & \texttt{summary.txt} s~podíly po cílech; shoda se zdrojem a se soudcem se od záznamu lišit nesmí, medián se liší strojem & server není v~měřicím režimu \\
 \textbf{5. Srovnání s~LLM}: jedna buňka, tři pokusy, kanál \texttt{api} s~lokálním modelem & tři bajtově shodné odpovědi; v~\texttt{summary.md} oddíl o~cizích artefaktech & kontejner serveru skončí: málo paměti (model zabere asi 6~GB) \\
@@ -1650,7 +1719,7 @@ Projekt splnil, co specifikace nazvala jádrem rozšíření: společná mezirep
 experimenty & plné experimenty T4--T6 v~navazující diplomové práci (varianta \texttt{schema}, RAG, opravný cyklus, agentní varianta, ablace); běh SEDE se soudcem (rozh.~209) \\
 Advisor & měření všech šesti frameworků (rozh.~146, 147), srovnání s~heuristikou (T7), izolace spouštění cizího kódu (S4) \\
 \bottomrule
-\end{tabularx}
+\end{tabularx}%
 \caption{Navazující práce; úplný seznam nese \texttt{docs/open-items.md}.}
 \label{tab:dalsi}
 \end{table}
