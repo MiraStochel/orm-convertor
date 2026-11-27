@@ -168,7 +168,7 @@
  \textbf{Supervisor:} & \SupervisorFullName \\
  \textbf{Consultants:} & \ConsultantsFullName \\[1em]
  \textbf{Repository:} & \url{https://github.com/MiraStochel/orm-convertor}, release \texttt{\Vydani} \\
- \textbf{Date:} & 25.~listopadu~2026 \\
+ \textbf{Date:} & 26.~listopadu~2026 \\
 \end{tabular}}
 
 \bigskip
@@ -288,7 +288,7 @@ Stav jednotlivých požadavků uvádí tab.~\ref{tab:prehled-pozadavku}. U~stavu
 
 Repozitář tytéž stavy označuje jako \emph{nárokovaný}, \emph{nárokovaný v~užším rozsahu} a \emph{vyňatý} (\path{docs/traceability.md}, anglicky kořenové \texttt{README.md}, \emph{Guarantees}). Stav \emph{vyňatý} tam mají řádky \emph{připraveno} a \emph{nerealizováno} a první věta požadavku S4. Požadavek S6 tam má užší rozsah, protože seznam požadavků vedoucího žádá v~záznamu převodu i~výsledky kompilace a testů. Ty jsou v~záznamech běhů sad. Užší rozsah tam mají i~požadavky T1--T3: nárokuje se vstup, matice a měření, ne naměřené hodnoty.
 
-Zpráva popisuje release \texttt{\Vydani} (tag z~23.~listopadu~2026): nasazení, příklady i~počty testů (tab.~\ref{tab:cisla}) odpovídají tomuto tagu. Výsledky běhů na vyžádání v~kap.~\ref{sec:exp} byly naměřeny nad staršími commity, které uvádí tab.~\ref{tab:zaznamy-behu}. Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
+Zpráva popisuje release \texttt{\Vydani} (tag z~23.~listopadu~2026): nasazení, příklady i~počty testů (tab.~\ref{tab:cisla}) odpovídají tomuto tagu. Experimentální běh (tab.~\ref{tab:t2t3}) proběhl nad stromem tohoto release. Výsledky ostatních běhů na vyžádání v~kap.~\ref{sec:exp} byly naměřeny nad staršími commity, které uvádí tab.~\ref{tab:zaznamy-behu}. Konec projektu podle schváleného záměru~\cite{zamer} je 1.~prosince~2026.
 
 \subsection{Struktura dokumentu}
 
@@ -1787,7 +1787,7 @@ javovská část běhu mezí vyčerpala haldu (31.~10.) & \texttt{OutOfMemoryErr
 první běh SEDE bez výsledku (8.~11.) & běh držel řádky všech buněk v~paměti do konce a pro 1~714 dotazů paměť nestačila & soubory běhu se zapisují po dotazech \\
 validátor SEDE nevznikl & obě sady braly za zdroj jiný text & rozh.~209: zdrojem obou sad je text katalogu. Běh podle něj zaznamenán není \\
 výňatky projektů se nezkompilovaly (24.~10.) & z~63 řádků první kontroly (21 příkladů × 3 cíle) došlo do třetího stupně 44. Výňatky odkazovaly na typy mimo výňatek, výčty a mapy & vstupy upraveny. Kontrola, která změnila vstupy experimentu, je zaznamenána jako běh v~\texttt{docs/runs/} \\
-výňatek Cofoundry pod třetím stupněm: v~pěti cílech se nezkompiloval, v~NHibernate ho framework nepřijal (5.~11.) & typ mimo výňatek a čtyři vady překladu: člen zachyceného jména čtený jako sloupec, vyhrazená jména v~\texttt{hbm.xml}, dvojí navigace v~EF~Core a tabulka \texttt{User} v~SQL Hibernate bez oddělovačů & výňatek upraven, vady opraveny s~testem, poslední v~release \Vydani. Experimentální běh nad opraveným stromem zaznamenán není \\
+výňatek Cofoundry pod třetím stupněm: v~pěti cílech se nezkompiloval, v~NHibernate ho framework nepřijal (5.~11.) & typ mimo výňatek a čtyři vady překladu: člen zachyceného jména čtený jako sloupec, vyhrazená jména v~\texttt{hbm.xml}, dvojí navigace v~EF~Core a tabulka \texttt{User} v~SQL Hibernate bez oddělovačů & výňatek upraven, vady opraveny s~testem, poslední v~release \Vydani. V~experimentálním běhu z~26.~11. výňatek dosáhl čtvrtého stupně v~cílech EF~Core, NHibernate, Hibernate a EclipseLink a třetího v~cílech Dapper a MyBatis (tab.~\ref{tab:studie}) \\
 \end{longtable}}
 
 \subsubsection*{Přerušení validačního běhu LDBC}
@@ -1855,7 +1855,7 @@ Při vývoji řešitel soustavně používal asistenta pro programování (Claud
 
 Kapitola odděluje implementovanou infrastrukturu od empiricky ověřených tvrzení. Infrastruktura je vstup experimentu, matice kategorií a metriky (T1--T3). Výsledná čísla předmětem nároku nejsou (rozh.~183, 184): jsou to záznamy jednotlivých běhů v~\texttt{docs/runs/}. Záznam uvádí commit, stroj a prostředí (tab.~\ref{tab:zaznamy-behu}). Záznamy měření S3 ze srpna commit neuvádějí. Běhy proběhly na měřicím stroji (kap.~\ref{sec:behy}). Výjimkou jsou první a třetí měření S3 a pokusy modelu v~běhu z~3.~11., které proběhly na druhém stroji (Intel Core i9-9900, 16~GB).
 
-\textbf{Čísla nejsou naměřena nad odevzdávaným release.} Nad release \texttt{\Vydani} je zaznamenána jen velikost obou testovacích sad. Ostatní čísla pocházejí ze stromů z~21.~8. až 9.~11.~2026 a běh nad opraveným stromem zaznamenán není. Historické jsou proto tři skupiny výsledků, které popisují vady opravené po běhu: řádky výňatku Cofoundry a příkladu \texttt{marketplace-fluent} v~EclipseLinku (tab.~\ref{tab:t2t3}, tab.~\ref{tab:studie}, opraveno rozh.~206 a v~release 2.4.0 a \texttt{\Vydani}), systematická selhání javovských cílů v~běhu SEDE (tab.~\ref{tab:meze}, opraveno rozh.~210--212 a 217) a buňka Cofoundry → Hibernate ve srovnání s~jazykovými modely.
+\textbf{Většina čísel není naměřena nad odevzdávaným release.} Nad release \texttt{\Vydani} jsou zaznamenány velikost obou testovacích sad a experimentální běh z~26.~11. (tab.~\ref{tab:t2t3}, tab.~\ref{tab:studie}). Ostatní čísla pocházejí ze stromů z~21.~8. až 9.~11.~2026 a běh nad opraveným stromem pro ně zaznamenán není. Historické jsou proto dvě skupiny výsledků, které popisují vady opravené po běhu: systematická selhání javovských cílů v~běhu SEDE (tab.~\ref{tab:meze}, opraveno rozh.~210--212 a 217) a buňka Cofoundry → Hibernate ve srovnání s~jazykovými modely (opraveno v~release \texttt{\Vydani}).
 
 \begin{table}[H]
 \centering\footnotesize
@@ -1869,10 +1869,10 @@ běh mezí & 29.~10.--1.~11. & \texttt{fd27497}, javovská část se čtyřmi so
 celý vstup & 30.~10. & \texttt{6d5d5a5} \\
 běh FIBEN & 2.~11. & strom release 2.3.0 (\texttt{63d0b81}) \\
 validátor LDBC & 2.--5.~11. & strom release 2.3.0 (\texttt{63d0b81}) \\
-experimentální běh & 5.~11. & strom release 2.3.0 (\texttt{a105b3d}) \\
 srovnání s~jazykovými modely & 1., 3., 5. a 6.~11. & \texttt{861e228}, \texttt{08b4e4f}, \texttt{a1adad9}, \texttt{5023805} \\
 běh SEDE (druhý) & 8.--9.~11. & \texttt{1f7430b} \\
 velikost sad & 23.~11. & strom release \Vydani \\
+experimentální běh & 26.~11. & strom release \Vydani{} (\texttt{ab2bbcf}) \\
 \bottomrule
 \end{tabular}
 \caption{Záznamy, ze kterých čísla této kapitoly pocházejí. \emph{Strom release} je commit, který se od tagu liší jen dokumentací, číslem verze nebo změnou bez vlivu na výsledek (\texttt{docs/runs/README.md}).}
@@ -1914,7 +1914,7 @@ Metodiku dále určují metriky, vstupy, měření času a populace:
 \texttt{fiben:} & 237 & dotazy FIBEN s~otázkou v~přirozeném jazyce & regresní validátor z~doloženého běhu nástroje \\
 \bottomrule
 \end{tabularx}%
-\caption{Vstupy experimentů a jejich počet v~experimentálním běhu za release 2.3.0 (celkem 624). Katalog SEDE (1~714 dotazů) běží jen vlastním během.}
+\caption{Vstupy experimentů a jejich počet v~experimentálním běhu za release \texttt{\Vydani} (celkem 624). Katalog SEDE (1~714 dotazů) běží jen vlastním během.}
 \label{tab:vstupy}
 \end{table}
 
@@ -1933,29 +1933,24 @@ Metodiku dále určují metriky, vstupy, měření času a populace:
 \toprule
 \textbf{Dvojice} & \textbf{n} & \textbf{odm.} & \textbf{nat.\ SQL} & \textbf{přečteno} & \textbf{zkomp.} & \textbf{přijato} & \textbf{n4} & \textbf{běží} & \textbf{shoda} & \textbf{mapování} \\
 \midrule
-.NET → .NET & 1~341 & 1 & 129 & 1~340 & 1~338 & 1~337 & 1~186 & 1~183 & 1~179 & 99~\% \\
-.NET → Java & 1~341 & 2 & 95 & 1~339 & 1~336 & 1~335 & 1~186 & 1~183 & 1~179 & 69~\% \\
+.NET → .NET & 1~341 & 1 & 129 & 1~340 & 1~340 & 1~340 & 1~185 & 1~185 & 1~179 & 99~\% \\
+.NET → Java & 1~341 & 2 & 95 & 1~339 & 1~339 & 1~339 & 1~185 & 1~185 & 1~179 & 69~\% \\
 Java → .NET & 531 & 4 & 42 & 527 & 527 & 527 & 492 & 489 & 486 & 99~\% \\
 Java → Java & 531 & 4 & 29 & 527 & 527 & 527 & 492 & 490 & 486 & 75~\% \\
 \bottomrule
 \end{tabular}
-\caption{Tabulka T2~×~T3 po dvojicích ekosystémů, experimentální běh 5.~11.~2026.}
+\caption{Tabulka T2~×~T3 po dvojicích ekosystémů, experimentální běh 26.~11.~2026 nad release \texttt{\Vydani}.}
 \label{tab:t2t3}
 \end{table}
 
 \textbf{Interpretace.} Každý překlad, který má referenční výsledek, se s~ním shoduje: 1~179 z~1~179, 1~179 z~1~179, 486 z~486 a 486 z~486. Tvrzení o~shodě se týká jen těchto 3~330 řádků. Zbylých 414 řádků referenční výsledek nemá:
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
-\item \textbf{388 řádků bez čtvrtého stupně} (\emph{n} $-$ \emph{n4}): dotazy LDBC, jejichž čtvrtým stupněm je validátor LDBC mimo tento běh, příklady a scénáře jen s~entitami, které končí třetím stupněm, a deset řádků případových studií do Dapperu a MyBatisu. Dva řádky výňatku Cofoundry do těchto cílů třetího stupně nedosáhly, proto je běh počítá do \emph{n4} jako neúspěšné.
-\item \textbf{26 řádků případových studií}: 15 běží nad prázdnými tabulkami bez referenčního výsledku (\emph{běží} $-$ \emph{shoda}), 6 patří výňatku Cofoundry, jehož artefakty v~žádném cíli nedosáhly třetího stupně, a 5 je odmítnutých.
+\item \textbf{390 řádků bez čtvrtého stupně} (\emph{n} $-$ \emph{n4}): dotazy LDBC, jejichž čtvrtým stupněm je validátor LDBC mimo tento běh, příklady a scénáře jen s~entitami, které končí třetím stupněm, a dvanáct řádků případových studií do Dapperu a MyBatisu.
+\item \textbf{24 řádků případových studií}: 19 běží nad prázdnými tabulkami bez referenčního výsledku (\emph{běží} $-$ \emph{shoda}) a 5 je odmítnutých.
 \end{itemize}
 
-V~celé populaci je 11 odmítnutí a 7 artefaktů, které nedosáhly třetího stupně:
-
-\begin{itemize}[leftmargin=*,itemsep=1pt]
-\item \textbf{11 odmítnutí} je podle rozhodnutí: zdroje Dapper a MyBatis bez katalogu do cílů, které klíč vyžadují (6), případová studie JPetStore do NHibernate, Hibernate a EclipseLinku, protože klíč neobsahuje ani její katalog (3), a případové studie JPetStore a Keycloak do EF~Core (2).
-\item \textbf{7 artefaktů pod třetím stupněm}: pět se nezkompilovalo a dva odmítl framework. Šest patří výňatku Cofoundry (tab.~\ref{tab:nepovedlo}) a jeden příkladu \texttt{marketplace-fluent} v~EclipseLinku (rozh.~206).
-\end{itemize}
+V~celé populaci je 11 odmítnutí a žádný artefakt pod třetím stupněm. Odmítnutí jsou podle rozhodnutí: zdroje Dapper a MyBatis bez katalogu do cílů, které klíč vyžadují (6), případová studie JPetStore do NHibernate, Hibernate a EclipseLinku, protože klíč neobsahuje ani její katalog (3), a případové studie JPetStore a Keycloak do EF~Core (2). V~běhu z~5.~11. nad release 2.3.0 skončilo pod třetím stupněm sedm artefaktů: šest z~výňatku Cofoundry (tab.~\ref{tab:nepovedlo}) a jeden z~příkladu \texttt{marketplace-fluent} v~EclipseLinku (opraveno rozh.~206).
 
 Úplnost mapování javovských cílů je nižší (Hibernate 66~\%, EclipseLink 72~\%, MyBatis 80~\%, .NET cíle 99~\%). Způsobují ji fakta, která parser ze svého artefaktu nečte zpět: databázový typ, který JPA určuje z~javovského typu, a \texttt{<id>} MyBatisu. Je to uvedená mez metriky (rozh.~188), ne ztráta v~překladu. Dapper jmenovatele nemá, protože jeho deskriptor nevyjadřuje žádný mapovací fakt.
 
@@ -2026,14 +2021,14 @@ Tab.~\ref{tab:studie} uvádí stupeň (kap.~\ref{sec:metodika}), kterého projek
 \textbf{Studie (zdroj)} & \textbf{Dapper} & \textbf{EF~Core} & \textbf{NHibernate} & \textbf{Hibernate} & \textbf{EclipseLink} & \textbf{MyBatis} \\
 \midrule
 Keycloak (Hibernate) & 3 & odmítnuto & 4 & 4 & 4 & 3 \\
-Cofoundry (EF~Core) & 1 & 1 & 2 & 1 & 1 & 1 \\
+Cofoundry (EF~Core) & 3 & 4 & 4 & 4 & 4 & 3 \\
 Ambari (EclipseLink) & 3 & 4 & 4 & 4 & 4 & 3 \\
 Chinook (Dapper) & 3 & 4 & 4 & 4 & 4 & 3 \\
 Chinook (EF~Core) & 3 & 4 & 4 & 4 & 4 & 3 \\
 JPetStore (MyBatis) & 3 & odmítnuto & odmítnuto & odmítnuto & odmítnuto & 3 \\
 \bottomrule
 \end{tabular}
-\caption{Případové studie: dosažený stupeň projektu v~každém cíli (5.~11.~2026). 1 přečteno, 2 zkompilováno, 3 přijato frameworkem, 4 běží nad prázdnými tabulkami.}
+\caption{Případové studie: dosažený stupeň projektu v~každém cíli (26.~11.~2026). 1 přečteno, 2 zkompilováno, 3 přijato frameworkem, 4 běží nad prázdnými tabulkami.}
 \label{tab:studie}
 \end{table}
 
@@ -2104,7 +2099,7 @@ Protokol srovnání (rozh.~175, 189, 202--205, 207) staví na témže výpisu vs
 
 \textbf{Co model dostal.} Ve variantě \texttt{zero-shot} zadání úlohy, cílový framework a jeho připnutou verzi, tvar odpovědi a tytéž vstupní soubory jako nástroj. Varianta \texttt{few-shot} přidává tři ručně přeložené příklady v~témž směru a import u~ní doplní chybějící \texttt{import} nebo \texttt{using}. Model nedostal schéma databáze, které nástroj čte z~katalogu, dokumentaci frameworku ani nástroje. Variantu \texttt{schema} žádný běh nepoužil.
 
-\textbf{Možná zkreslení.} Ve prospěch nástroje působí dvě okolnosti. Sada \emph{záludná} obsahuje vstupy, pro které byl nástroj opraven. Validátor v~těchto bězích znal prostředí artefaktu (schéma tabulek, reference projektu, jméno assembly) lépe, než je popisoval prompt. Pro další běhy je protokol o~tyto údaje doplněn (rozh.~207). Ve prospěch modelu působí, že v~běhu z~1.~11. obsahoval prompt komentář se jmény tabulek, která nástroj bere z~katalogu. Kategorie matice jsou ve veřejném repozitáři od září~2026. Záznamy uvádějí u~modelů Fable 5.1 a Opus 5.5 hranici trénovacích dat v~červnu 2026, u~modelu Qwen3.5-9B ji výrobce neuvádí. Srovnání hodnotí správnost. Efektivitu běhu přeloženého kódu, kterou u~překladu kódu jazykovými modely hodnotí benchmark TRACE~\cite{trace}, neměří.
+\textbf{Možná zkreslení.} Ve prospěch nástroje působí dvě okolnosti. Sada \emph{záludná} obsahuje vstupy, pro které byl nástroj opraven. Validátor v~těchto bězích znal prostředí artefaktu (schéma tabulek, reference projektu, jméno assembly) lépe, než je popisoval prompt. Pro další běhy je protokol o~tyto údaje doplněn (rozh.~207). Ve prospěch modelu působí, že v~běhu z~1.~11. obsahoval prompt komentář se jmény tabulek, která nástroj bere z~katalogu. U~modelů Fable 5.1 a Opus 5.5 jsou trénovací data z~června 2026, u~modelu Qwen3.5-9B ji výrobce neuvádí. Srovnání hodnotí správnost, ale nehodnotí efektivitu běhu přeloženého kódu jako benchmark TRACE~\cite{trace}.
 
 \textbf{Pilotní model} je Qwen3.5-9B~\cite{qwen} v~kvantizaci Q4\_K\_M v~serveru llama.cpp~\cite{llamacpp}. Větší modely téže řady se do 12~GB virtuálního stroje nevejdou (rozh.~202). Nasazení uvádí výpis~\ref{lst:llm-server}. Není to silný model ve smyslu požadavku T4: je dolní mezí a ověřením kanálu \texttt{api}. Na čtyřech jádrech trval pokus 5 až 62 minut s~mediánem 16 minut. Běh z~5.~11. volá týmž kanálem \texttt{api} model Claude Fable 5.1 na endpointu výrobce. Jeho soubor \texttt{api.json} se od nastavení pilotního modelu liší adresou, jménem modelu, limitem tokenů, cenami a klíčem. Endpoint výrobce teplotu nepřijímá a seed ignoruje, takže tři pokusy na buňku nejsou bajtově shodné (rozh.~203).
 
@@ -2130,7 +2125,7 @@ Opus 5.5, code & few-shot & 126/129 (98~\%) & 120/129 (93~\%) & 102/129 (79~\%) 
 \label{tab:llm-vysledky}
 \end{table}
 
-Nástroj dosáhl nad týmiž buňkami nejvyššího stupně, který buňka umožňuje, ve všech 13 buňkách prvních tří běhů (shoda 11 z~11) a ve 40 ze 43 buněk čtvrtého běhu (shoda 27 z~27). Dvě buňky odmítl podle rozhodnutí: JPetStore → Hibernate bez klíče a Keycloak → EF~Core s~kolekčním parametrem v~nativním SQL. V~buňce Cofoundry → Hibernate selhal dotaz, protože Hibernate tehdy psal tabulku \texttt{User} do SQL bez oddělovačů. Vadu opravuje release \texttt{\Vydani}. Ze čtyř běhů plynou čtyři zjištění:
+Nástroj dosáhl nad týmiž buňkami nejvyššího stupně, který buňka umožňuje, ve všech 13 buňkách prvních tří běhů (shoda 11 z~11) a ve 40 ze 43 buněk čtvrtého běhu (shoda 27 z~27). Dvě buňky odmítl podle rozhodnutí: JPetStore → Hibernate bez klíče a Keycloak → EF~Core s~kolekčním parametrem v~nativním SQL. V~buňce Cofoundry → Hibernate selhal dotaz, protože Hibernate tehdy psal tabulku \texttt{User} do SQL bez oddělovačů. Vadu opravuje release \texttt{\Vydani}: v~experimentálním běhu z~26.~11. tento překlad dosáhl čtvrtého stupně (tab.~\ref{tab:studie}). Ze čtyř běhů plynou čtyři zjištění:
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
 \item \textbf{Qwen3.5-9B na 13 buňkách dodržel formát odpovědi, ne boilerplate.} Všech 39 odpovědí obsahuje bloky šablony, žádný artefakt není přijatý. Ruční oprava mimo záznam dovedla 8 ze 13 buněk na nejvyšší stupeň (tři jen opravou boilerplate, pět až po opravách podle hlášení frameworku nebo databáze), 5 zůstalo na chybách obsahu. Záznam tedy měří dodržení předepsaného tvaru, ne obsah odpovědi. Dvanáct z~39 pokusů (4 buňky) skončilo na limitu 8~192 tokenů: soubory jsou úplné, závěrečná zpráva opakuje jednu větu až do limitu.
@@ -2166,7 +2161,7 @@ Reprodukce má tři úrovně: minimální ověření, reprodukci tabulky T2~×~T
 \midrule
 \multicolumn{4}{@{}l}{\textbf{Reprodukce tabulky T2~×~T3 a srovnání s~modelem}} \\
 3.~Experimentální běh bez druhu \texttt{fiben} (výpis~\ref{lst:exp-beh}) & profil \texttt{test} & záznam ji neuvádí & \texttt{summary.md} ve volume s~tabulkami ve sloupcích tab.~\ref{tab:t2t3} a 2~322 řádky \\
-4.~Experimentální běh s~druhem \texttt{fiben} (výpis~\ref{lst:exp-fiben}) & navíc databáze \texttt{Fiben} v~\texttt{mssql\_db} a instance s~katalogem nad ní & 58~min včetně buildu & \texttt{summary.md} s~celou populací 3~744 řádků \\
+4.~Experimentální běh s~druhem \texttt{fiben} (výpis~\ref{lst:exp-fiben}) & navíc databáze \texttt{Fiben} v~\texttt{mssql\_db} a instance s~katalogem nad ní & 66~min včetně buildu z~cache & \texttt{summary.md} s~celou populací 3~744 řádků \\
 5.~Srovnání s~LLM: jedna buňka, tři pokusy, kanál \texttt{api} s~lokálním modelem & model zabere asi 6~GB paměti & pokus buňky z~výpisu~\ref{lst:llm-min} asi 12~minut & tři bajtově shodné odpovědi a oddíl o~cizích artefaktech v~\texttt{summary.md} \\
 \midrule
 \multicolumn{4}{@{}l}{\textbf{Dlouhé běhy}} \\
